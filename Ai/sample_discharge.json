@@ -1,0 +1,164 @@
+{
+  "patient": {
+    "name": "Rahul Sharma",
+    "age": 45,
+    "gender": "Male",
+    "hospital": "City Care Hospital",
+    "doctor": "Dr. Anjali Verma",
+    "diagnosis": "Type 2 Diabetes Mellitus with Hypertension",
+    "discharge_date": "2026-07-18"
+  },
+
+  "medications": [
+    {
+      "name": "Metformin",
+      "dose": "500 mg",
+      "frequency": "Twice Daily",
+      "timings": ["08:00", "20:00"],
+      "after_food": true,
+      "duration": "30 days",
+      "purpose": "Control blood sugar"
+    },
+    {
+      "name": "Amlodipine",
+      "dose": "5 mg",
+      "frequency": "Once Daily",
+      "timings": ["09:00"],
+      "after_food": false,
+      "duration": "30 days",
+      "purpose": "Control blood pressure"
+    },
+    {
+      "name": "Pantoprazole",
+      "dose": "40 mg",
+      "frequency": "Once Daily",
+      "timings": ["07:30"],
+      "before_food": true,
+      "duration": "14 days",
+      "purpose": "Reduce stomach acid"
+    }
+  ],
+
+  "medicine_timetable": [
+    {
+      "time": "07:30",
+      "task": "Take Pantoprazole before breakfast"
+    },
+    {
+      "time": "08:00",
+      "task": "Take Metformin after breakfast"
+    },
+    {
+      "time": "09:00",
+      "task": "Take Amlodipine"
+    },
+    {
+      "time": "20:00",
+      "task": "Take Metformin after dinner"
+    }
+  ],
+
+  "diet_plan": {
+    "recommended": [
+      "Whole grains",
+      "Green vegetables",
+      "Fresh fruits in moderation",
+      "Dal and pulses",
+      "Low-fat milk",
+      "Drink 2–3 liters of water daily"
+    ],
+    "avoid": [
+      "Sugary drinks",
+      "Sweets",
+      "Deep fried food",
+      "Excess salt",
+      "Alcohol"
+    ],
+    "notes": [
+      "Eat meals at regular times.",
+      "Do not skip breakfast.",
+      "Avoid overeating."
+    ]
+  },
+
+  "exercise_restrictions": {
+    "allowed": [
+      "Walk 20–30 minutes daily",
+      "Light stretching"
+    ],
+    "avoid": [
+      "Heavy weight lifting",
+      "Running",
+      "Strenuous exercise for two weeks"
+    ],
+    "special_instructions": "Increase activity gradually if no dizziness or chest pain occurs."
+  },
+
+  "warning_signs": [
+    {
+      "symptom": "Chest pain",
+      "severity": "Emergency",
+      "action": "Go to the nearest emergency department immediately."
+    },
+    {
+      "symptom": "Difficulty breathing",
+      "severity": "Emergency",
+      "action": "Call emergency services immediately."
+    },
+    {
+      "symptom": "Very high blood sugar (>300 mg/dL)",
+      "severity": "Urgent",
+      "action": "Contact your doctor the same day."
+    },
+    {
+      "symptom": "Repeated vomiting",
+      "severity": "Urgent",
+      "action": "Visit the hospital."
+    },
+    {
+      "symptom": "Fever above 101°F lasting more than one day",
+      "severity": "Moderate",
+      "action": "Consult your physician."
+    }
+  ],
+
+  "follow_up": {
+    "date": "2026-07-25",
+    "department": "General Medicine",
+    "doctor": "Dr. Anjali Verma",
+    "location": "OPD Block A",
+    "instructions": "Bring previous reports and fasting blood sugar record."
+  },
+
+  "tests": [
+    {
+      "name": "Fasting Blood Sugar",
+      "date": "2026-07-24"
+    },
+    {
+      "name": "HbA1c",
+      "date": "2026-08-18"
+    }
+  ],
+
+  "lifestyle_advice": [
+    "Sleep at least 7 hours every night.",
+    "Stop smoking.",
+    "Avoid alcohol.",
+    "Monitor blood sugar daily."
+  ],
+
+  "contact_information": {
+    "hospital": "City Care Hospital",
+    "phone": "+91-9876543210",
+    "emergency": "102"
+  },
+
+  "simple_explanation": {
+    "diagnosis": "You have diabetes and high blood pressure. Your medicines help control your blood sugar and blood pressure to reduce the risk of future complications.",
+    "medicines": "Take every medicine at the correct time. Do not stop any medicine without asking your doctor.",
+    "diet": "Eat healthy meals with less sugar, salt, and oil. Drink enough water.",
+    "exercise": "Walking is good, but avoid heavy exercise until your doctor allows it.",
+    "follow_up": "Visit the hospital on your follow-up date even if you feel well."
+  }
+}
