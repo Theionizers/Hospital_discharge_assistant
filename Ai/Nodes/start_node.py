@@ -1,10 +1,17 @@
 from Ai.llm import llm
 from pprint import pprint
-def start_node():
+import json
+from Ai.State.Graph_state import Hopitaldata
+with open('Ai/sample_discharge.json','r') as f:
+    data=json.load(f)
+
+def start_node(state:Hopitaldata):
     
     WELCOME_MESSAGE = (
-        "Hi! I'm Hospital Buddy. How can I help you today?"
+        f"Hi! {data['patient']['name']} I'm Hospital Buddy. How can I help you today?"
     )
 
-    print(WELCOME_MESSAGE)
-start_node()
+    return {
+        "response":WELCOME_MESSAGE
+    }
+
