@@ -1,11 +1,12 @@
 from langchain_core.messages import SystemMessage, HumanMessage
 from Ai.llm import llm
 import json
-
+from Ai.State.Graph_state import Hopitaldata
 with open("Ai/sample_discharge.json", "r") as f:
     data = json.load(f)
 
-def medication(question):
+def medication(state:Hopitaldata):
+    question=state['user_message']
     prompt = f"""
 You are Hospital Buddy, an AI assistant that answers ONLY medication-related questions.
 
@@ -39,9 +40,9 @@ Answer the user's question.
         HumanMessage(content=question)
     ]
 
-    return llm.invoke(messages)
+    response= llm.invoke(messages)
+    return {
+        "response":response.text()
+    }
 
-while True:
-    a=input("You:")
-    response=medication(a)
-    print(response.text())
+
