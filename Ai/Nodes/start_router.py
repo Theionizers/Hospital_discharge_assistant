@@ -1,7 +1,10 @@
 from pprint import pprint
 from Ai.llm import llm
 from langchain.messages import HumanMessage,SystemMessage
-def start_router():
+from Ai.State.Graph_state import Hopitaldata
+
+
+def start_router(state:Hopitaldata):
     system_prompt = """
 You are a routing assistant for a Hospital Discharge Assistant.
 
@@ -56,11 +59,12 @@ Output: patient
 User: Hello
 Output: general
 """
-    prompt=input(str)
+
+    prompt=state['user_message']
     response=llm.invoke([
         SystemMessage(content=system_prompt),
         HumanMessage(content=prompt)
     ])
-    pprint(response.content)
-
-start_router()
+    return {
+        "intention":response.text()
+    }
