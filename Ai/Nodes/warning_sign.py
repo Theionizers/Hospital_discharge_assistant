@@ -1,11 +1,11 @@
 from langchain_core.messages import SystemMessage, HumanMessage
 from Ai.llm import llm
 import json
-
+from Ai.State.Graph_state import Hopitaldata
 with open("Ai/sample_discharge.json", "r") as f:
     data = json.load(f)
 
-def warning_signs(question):
+def warning_signs(state:Hopitaldata):
     system_prompt = """
     You are Hospital Buddy, an AI assistant that answers ONLY warning-sign and emergency-related questions.
 
@@ -39,17 +39,14 @@ Warning Signs:
 {json.dumps(data["warning_signs"], indent=2)}
 
 Patient Question:
-{question}
+{state['user_message']}
 """
 
     messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=human_prompt)
     ]
-
-    return llm.invoke(messages)
-
-while True:
-    a=input("you:")
-    response=warning_signs(a)
-    print(response.text)
+    response=llm.invoke(messages)
+    return {
+        "response":response.text()
+    }
