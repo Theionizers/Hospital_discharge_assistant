@@ -1,5 +1,5 @@
 from Ai.llm import llm
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage,AIMessage
 import json
 from Ai.State.Graph_state import Hopitaldata
 with open("Ai/sample_discharge.json", "r") as f:
@@ -53,6 +53,8 @@ Medicine Timetable:
     ])
 
     return {
-        "response":response.text()
-        
+        "response":response.text(),
+        "messages": [
+        AIMessage(content=response.text())
+    ]
     }

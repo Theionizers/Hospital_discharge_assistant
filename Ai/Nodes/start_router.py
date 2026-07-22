@@ -1,6 +1,6 @@
 from pprint import pprint
 from Ai.llm import llm
-from langchain.messages import HumanMessage,SystemMessage
+from langchain.messages import HumanMessage,SystemMessage,AIMessage
 from Ai.State.Graph_state import Hopitaldata
 
 
@@ -66,5 +66,5 @@ Output: general
         HumanMessage(content=prompt)
     ])
     return {
-        "intention":response.text()
+        "intention":response.text(),
     }

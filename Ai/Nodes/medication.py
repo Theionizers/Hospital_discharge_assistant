@@ -1,4 +1,4 @@
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage,AIMessage
 from Ai.llm import llm
 import json
 from Ai.State.Graph_state import Hopitaldata
@@ -42,7 +42,10 @@ Answer the user's question.
 
     response= llm.invoke(messages)
     return {
-        "response":response.text()
+        "response":response.text(),
+        "messages": [
+        AIMessage(content=response.text())
+    ]
     }
 
 

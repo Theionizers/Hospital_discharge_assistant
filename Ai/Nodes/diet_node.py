@@ -1,4 +1,5 @@
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage,AIMessage
+from Ai.State.Graph_state import Hopitaldata
 from Ai.llm import llm
 import json
 
@@ -6,7 +7,7 @@ with open("Ai/sample_discharge.json", "r") as f:
     data = json.load(f)
 
 
-def diet_plan():
+def diet_plan(state:Hopitaldata):
     system_prompt = f"""
 You are the hospital dietitian for a discharge assistant.
 
@@ -43,19 +44,16 @@ Rules:
 "I can only assist with diet and nutrition questions."
 """
 
-    while True:
-        prompt = input("You: ")
+    prompt=state['user_message']
 
-        if prompt.lower() in {"exit", "quit"}:
-            break
+    response = llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=prompt),
+    ])
+    return {
+        "response":response.text(),
+        "messages": [
+        AIMessage(content=response.text())
+    ]
+    }
 
-        response = llm.invoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=prompt),
-        ])
-
-        print("\nAssistant:\n")
-        print(response.text())
-        print()
-
-diet_plan()
