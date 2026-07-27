@@ -47,7 +47,8 @@ Patient Question:
         HumanMessage(content=human_prompt)
     ]
     response=llm.invoke(messages)
+    answer = response.text
     return {
-        "response":response.text(),
-        "messages":AIMessage(content=response.text.strip())
+        "response":answer,
+        "messages":[AIMessage(content=answer)]
     }

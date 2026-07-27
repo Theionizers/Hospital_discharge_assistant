@@ -6,7 +6,6 @@ with open('Ai/sample_discharge.json','r') as f:
     data=json.load(f)
 
 def start_node(state:Hopitaldata):
-    
     WELCOME_MESSAGE = (
         f"Hi! {data['patient']['name']} I'm Hospital Buddy. How can I help you today?"
     )

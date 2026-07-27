@@ -41,10 +41,11 @@ Answer the user's question.
     ]
 
     response= llm.invoke(messages)
+    answer = response.text
     return {
-        "response":response.text(),
+        "response":answer,
         "messages": [
-        AIMessage(content=response.text())
+        AIMessage(content=answer)
     ]
     }
 

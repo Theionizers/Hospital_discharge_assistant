@@ -39,9 +39,8 @@ builder.add_edge("general", END)
 # graph = builder.compile(checkpointer=memory)
 
 initial_state = {
-    "messages": [
-        {"role": "user", "content": "hi"}
-    ],
+    "user_message":"i have fever for 2 days",
+    "messages": [],
     "intention": ""
 }
 with SqliteSaver.from_conn_string("chat_memory.db") as memory:

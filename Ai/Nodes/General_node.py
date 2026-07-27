@@ -51,10 +51,11 @@ Medicine Timetable:
         SystemMessage(content=system_prompt),
         HumanMessage(content=question)
     ])
+    answer = response.text
 
     return {
-        "response":response.text(),
+        "response":answer,
         "messages": [
-        AIMessage(content=response.text())
+        AIMessage(content=answer)
     ]
     }

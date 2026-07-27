@@ -66,5 +66,5 @@ Output: general
         HumanMessage(content=prompt)
     ])
     return {
-        "intention":response.text(),
+        "intention":response.text.strip(),
     }
