@@ -7,6 +7,10 @@ from Ai.Nodes.medication import medication
 
 from Ai.State.Graph_state import Hopitaldata
 from langgraph.graph import StateGraph,START,END
+from langgraph.checkpoint.sqlite import SqliteSaver
+
+
+
 
 builder = StateGraph(Hopitaldata)
 
@@ -18,6 +22,7 @@ builder.add_node("general", general)
 builder.add_node("medication", medication)
 
 builder.add_edge(START,"start")
+builder.add_edge("start","router")
 builder.add_conditional_edges("router",lambda state: state["intention"],
     {
         "diet_plan": "diet",
@@ -31,15 +36,26 @@ builder.add_edge("medication", END)
 builder.add_edge("warning", END)
 builder.add_edge("general", END)
 
-graph = builder.compile()
+# graph = builder.compile(checkpointer=memory)
 
 initial_state = {
     "messages": [
-        {"role": "user", "content": "What should I eat?"}
+        {"role": "user", "content": "hi"}
     ],
     "intention": ""
 }
+with SqliteSaver.from_conn_string("chat_memory.db") as memory:
+    graph = builder.compile(checkpointer=memory)
 
-result = graph.invoke(initial_state)
+    config = {
+        "configurable": {
+            "thread_id": "user_1"
+        }
+    }
 
-print(result)
+    response = graph.invoke(
+        initial_state,
+        config=config
+    )
+
+    print(response)
