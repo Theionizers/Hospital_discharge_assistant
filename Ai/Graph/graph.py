@@ -6,7 +6,11 @@ from Ai.Nodes.start_router import start_router
 from Ai.Nodes.medication import medication
 from Ai.Nodes.life_style_advise import life_style
 from Ai.Nodes.simple_explanation import simple_explanation
-
+from Ai.Nodes.contact_information import contact_information
+from Ai.Nodes.patient import patient
+from Ai.Nodes.medicine_timetable import medication_timetable
+from Ai.Nodes.tests import tests
+from Ai.Nodes.exercise_restriction import exercise_restrictions
 from Ai.State.Graph_state import Hopitaldata
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -20,6 +24,7 @@ builder.add_node("warning", warning_signs)
 builder.add_node("general", general)
 builder.add_node("medication", medication)
 builder.add_node("life_style_advise", life_style)
+builder.add_node("simple_explanation", simple_explanation)
 builder.add_node("simple_explanation", simple_explanation)
 
 builder.add_edge(START, "start")
