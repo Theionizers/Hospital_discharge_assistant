@@ -11,6 +11,6 @@ def start_node(state:Hopitaldata):
     )
 
     return {
-        "response":WELCOME_MESSAGE
+        "response":""
     }
 

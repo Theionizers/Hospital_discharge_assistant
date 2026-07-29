@@ -1,11 +1,8 @@
 from sqlalchemy import (
-    ForeignKey,
-    String,
-    Text,
     DateTime,
     func
 )
-from db import Base
+from Backend.Database.database import Base
 from sqlalchemy.orm import Mapped,mapped_column,relationship
 class Patient(Base):
     __tablename__ ="patients"

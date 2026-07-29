@@ -9,6 +9,16 @@ with open("Ai/sample_discharge.json", "r") as f:
 
 def simple_explanation(state: Hopitaldata):
     question = state["user_message"]
+    document_text = state.get("document_text")
+    source_information = (
+        f"Uploaded Discharge Summary Text:\n{document_text}"
+        if document_text
+        else f"""Simple Explanation Information:
+{json.dumps(data["simple_explanation"], indent=2)}
+
+Patient Information:
+{json.dumps(data["patient"], indent=2)}"""
+    )
 
     system_prompt = f"""
 You are Hospital Buddy, an AI assistant.
@@ -39,11 +49,8 @@ User: Explain everything.
 Assistant:
 Your discharge summary says that you have diabetes and high blood pressure. You should take your medicines on time, eat healthy food, walk as advised, and attend your follow-up appointment.
 
-Simple Explanation Information:
-{json.dumps(data["simple_explanation"], indent=2)}
-
-Patient Information:
-{json.dumps(data["patient"], indent=2)}
+Discharge Information:
+{source_information}
 """
 
     response = llm.invoke([
