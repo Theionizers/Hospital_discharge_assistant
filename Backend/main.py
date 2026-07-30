@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 
-from Database.database import Base,engine
+from Backend.Database.database import Base, engine
+from Backend.models import uploads
 
-from Routes.documents import router
+from Backend.Routes.documents import router
 Base.metadata.create_all(bind=engine)
 
 app=FastAPI()

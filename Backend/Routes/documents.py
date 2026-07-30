@@ -1,5 +1,5 @@
 from fastapi import APIRouter,UploadFile,File
-from Services.pdf_services import extract_text
+from Backend.Services.pdf_services import extract_text
 import os
 import uuid
 router=APIRouter()
