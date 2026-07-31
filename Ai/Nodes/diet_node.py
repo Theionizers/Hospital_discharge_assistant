@@ -1,23 +1,22 @@
 from langchain_core.messages import SystemMessage, HumanMessage,AIMessage
 from Ai.State.Graph_state import Hopitaldata
 from Ai.llm import llm
-import json
-
-with open("Ai/sample_discharge.json", "r") as f:
-    data = json.load(f)
+from Ai.Nodes.document_context import get_discharge_context
 
 
 def diet_plan(state:Hopitaldata):
+    source_information = get_discharge_context(
+        state,
+        "patient",
+        "diet_plan"
+    )
     system_prompt = f"""
 You are the hospital dietitian for a discharge assistant.
 
 Your only source of truth is the patient's discharge information provided below.
 
-Patient Information:
-{json.dumps(data["patient"], indent=2)}
-
-Diet Plan:
-{json.dumps(data["diet_plan"], indent=2)}
+Discharge Information:
+{source_information}
 
 Rules:
 1. Answer ONLY diet and nutrition related questions.

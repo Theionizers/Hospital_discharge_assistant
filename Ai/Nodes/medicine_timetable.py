@@ -1,14 +1,12 @@
 from Ai.llm import llm
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from Ai.State.Graph_state import Hopitaldata
-import json
-
-with open("Ai/sample_discharge.json", "r") as f:
-    data = json.load(f)
+from Ai.Nodes.document_context import get_discharge_context
 
 
 def medication_timetable(state: Hopitaldata):
     question = state["user_message"]
+    source_information = get_discharge_context(state, "medicine_timetable")
 
     system_prompt = f"""
 You are Hospital Buddy, an AI assistant for hospital discharge support.
@@ -61,7 +59,7 @@ Assistant:
 I couldn't find that medication schedule in your discharge summary. Please consult your treating doctor.
 
 Medication Timetable:
-{json.dumps(data["medicine_timetable"], indent=2)}
+{source_information}
 """
 
     response = llm.invoke([

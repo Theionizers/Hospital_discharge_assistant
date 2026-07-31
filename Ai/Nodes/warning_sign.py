@@ -1,9 +1,7 @@
 from langchain_core.messages import SystemMessage, HumanMessage,AIMessage
 from Ai.llm import llm
-import json
+from Ai.Nodes.document_context import get_discharge_context
 from Ai.State.Graph_state import Hopitaldata
-with open("Ai/sample_discharge.json", "r") as f:
-    data = json.load(f)
 
 def warning_signs(state:Hopitaldata):
     system_prompt = """
@@ -34,9 +32,10 @@ def warning_signs(state:Hopitaldata):
     10. Always make it clear that emergency medical care should not be delayed.
     """
 
+    source_information = get_discharge_context(state, "warning_signs")
     human_prompt = f"""
-Warning Signs:
-{json.dumps(data["warning_signs"], indent=2)}
+Discharge Information:
+{source_information}
 
 Patient Question:
 {state['user_message']}

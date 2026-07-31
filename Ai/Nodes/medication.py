@@ -1,22 +1,22 @@
 from langchain_core.messages import SystemMessage, HumanMessage,AIMessage
 from Ai.llm import llm
-import json
+from Ai.Nodes.document_context import get_discharge_context
 from Ai.State.Graph_state import Hopitaldata
-with open("Ai/sample_discharge.json", "r") as f:
-    data = json.load(f)
 
 def medication(state:Hopitaldata):
     question=state['user_message']
+    source_information = get_discharge_context(
+        state,
+        "medications",
+        "medicine_timetable"
+    )
     prompt = f"""
 You are Hospital Buddy, an AI assistant that answers ONLY medication-related questions.
 
-You have access to the patient's medication information below.
+Use ONLY the discharge information below.
 
-Medication Information:
-{json.dumps(data["medications"], indent=2)}
-
-Medicine Timetable:
-{json.dumps(data["medicine_timetable"], indent=2)}
+Discharge Information:
+{source_information}
 
 Rules:
 1. Answer ONLY using the provided medication information.

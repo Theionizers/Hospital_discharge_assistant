@@ -1,14 +1,12 @@
 from Ai.llm import llm
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from Ai.State.Graph_state import Hopitaldata
-import json
-
-with open("Ai/sample_discharge.json", "r") as f:
-    data = json.load(f)
+from Ai.Nodes.document_context import get_discharge_context
 
 
 def patient(state: Hopitaldata):
     question = state["user_message"]
+    source_information = get_discharge_context(state, "patient")
 
     system_prompt = f"""
 You are Hospital Buddy, an AI assistant for hospital discharge support.
@@ -50,7 +48,7 @@ Assistant:
 Your discharge date is 2026-07-18.
 
 Patient Information:
-{json.dumps(data["patient"], indent=2)}
+{source_information}
 """
 
     response = llm.invoke([

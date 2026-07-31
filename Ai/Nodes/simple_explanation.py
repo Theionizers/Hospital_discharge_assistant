@@ -1,23 +1,15 @@
 from Ai.llm import llm
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from Ai.State.Graph_state import Hopitaldata
-import json
-
-with open("Ai/sample_discharge.json", "r") as f:
-    data = json.load(f)
+from Ai.Nodes.document_context import get_discharge_context
 
 
 def simple_explanation(state: Hopitaldata):
     question = state["user_message"]
-    document_text = state.get("document_text")
-    source_information = (
-        f"Uploaded Discharge Summary Text:\n{document_text}"
-        if document_text
-        else f"""Simple Explanation Information:
-{json.dumps(data["simple_explanation"], indent=2)}
-
-Patient Information:
-{json.dumps(data["patient"], indent=2)}"""
+    source_information = get_discharge_context(
+        state,
+        "simple_explanation",
+        "patient"
     )
 
     system_prompt = f"""
