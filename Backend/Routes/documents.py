@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from Backend.Services.pdf_services import extract_pages
 from Backend.Services.json_services import save_extracted_json, read_extracted_json
@@ -42,28 +42,29 @@ async def upload_document(file: UploadFile = File(...)):
 
     delete_previous_uploads(stored_filename)
 
-    extracted_data = extract_pages(str(file_path))
+    try:
+        extracted_data = extract_pages(str(file_path))
+        extracted_data["original_filename"] = file.filename
+        extracted_data["stored_filename"] = stored_filename
 
-    extracted_data["original_filename"] = file.filename
-    extracted_data["stored_filename"] = stored_filename
+        json_path = save_extracted_json(stored_filename, extracted_data)
+        saved_json = read_extracted_json(json_path)
 
-    json_path = save_extracted_json(stored_filename, extracted_data)
+        result = invoke_workflow(
+            user_message="Summarize this hospital discharge document",
+            document_text=saved_json["full_text"]
+        )
 
-    saved_json = read_extracted_json(json_path)
-
-    result = invoke_workflow(
-        user_message="Summarize this hospital discharge document",
-        document_text=saved_json["full_text"]
-    )
-
-    return {
-        "original_filename": file.filename,
-        "stored_filename": stored_filename,
-        "thread_id": result["thread_id"],
-        "json_path": json_path,
-        "pages": saved_json["pages"],
-        "llm_response": result["response"]
-    }
+        return {
+            "original_filename": file.filename,
+            "stored_filename": stored_filename,
+            "thread_id": result["thread_id"],
+            "json_path": json_path,
+            "pages": len(saved_json["pages"]),
+            "llm_response": result["response"]
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/chat")
