@@ -1,9 +1,9 @@
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File
+from pydantic import BaseModel
 from Backend.Services.pdf_services import extract_pages
 from Backend.Services.json_services import save_extracted_json, read_extracted_json
-from Ai.Graph.graph import invoke_workflow
 import uuid
 
 
@@ -13,6 +13,12 @@ UPLOAD_DIR = Path("uploads")
 JSON_DIR = Path("extracted_json")
 UPLOAD_DIR.mkdir(exist_ok=True)
 JSON_DIR.mkdir(exist_ok=True)
+
+
+class ChatRequest(BaseModel):
+    message: str
+    thread_id: str | None = None
+    stored_filename: str | None = None
 
 
 def delete_previous_uploads(current_filename: str) -> None:
@@ -26,6 +32,8 @@ def delete_previous_uploads(current_filename: str) -> None:
 
 @router.post("/upload")
 async def upload_document(file: UploadFile = File(...)):
+    from Ai.Graph.graph import invoke_workflow
+
     stored_filename = f"{uuid.uuid4()}.pdf"
     file_path = UPLOAD_DIR / stored_filename
 
@@ -51,7 +59,28 @@ async def upload_document(file: UploadFile = File(...)):
     return {
         "original_filename": file.filename,
         "stored_filename": stored_filename,
+        "thread_id": result["thread_id"],
         "json_path": json_path,
         "pages": saved_json["pages"],
         "llm_response": result["response"]
     }
+
+
+@router.post("/chat")
+async def chat_with_document(request: ChatRequest):
+    from Ai.Graph.graph import invoke_workflow
+
+    document_text = None
+
+    if request.stored_filename:
+        json_path = JSON_DIR / request.stored_filename.replace(".pdf", ".json")
+        if json_path.exists():
+            document_text = read_extracted_json(str(json_path)).get("full_text")
+
+    result = invoke_workflow(
+        user_message=request.message,
+        thread_id=request.thread_id,
+        document_text=document_text,
+    )
+
+    return result

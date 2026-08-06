@@ -14,7 +14,6 @@ from Ai.Nodes.exercise_restriction import exercise_restrictions
 
 from Ai.State.Graph_state import Hopitaldata
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.sqlite import SqliteSaver
 from uuid import uuid4
 
 
@@ -104,15 +103,14 @@ def invoke_workflow(
     final_intention = ""
     final_state = state
 
-    with SqliteSaver.from_conn_string("chat_memory.db") as memory:
-        graph = build_graph().compile(checkpointer=memory)
-        for chunk in graph.stream(state, config=config, stream_mode="updates"):
-            for node_output in chunk.values():
-                if "response" in node_output:
-                    final_response = node_output["response"]
-                if "intention" in node_output:
-                    final_intention = node_output["intention"]
-                final_state.update(node_output)
+    graph = build_graph().compile(checkpointer=False)
+    for chunk in graph.stream(state, config=config, stream_mode="updates"):
+        for node_output in chunk.values():
+            if "response" in node_output:
+                final_response = node_output["response"]
+            if "intention" in node_output:
+                final_intention = node_output["intention"]
+            final_state.update(node_output)
 
     return {
         "thread_id": config["configurable"]["thread_id"],
