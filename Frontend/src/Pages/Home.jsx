@@ -1,14 +1,84 @@
-import { Bot, LockKeyhole, Upload } from "lucide-react";
+import { Bot, CheckCircle2, LoaderCircle, LockKeyhole, Upload, UploadCloud } from "lucide-react";
 import { useRef, useState } from "react";
 
 export default function Home() {
   const fileInputRef = useRef(null);
   const [fileName, setFileName] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
-  const chooseFile = () => fileInputRef.current?.click();
+  const chooseFile = () => {
+    if (!isUploading) {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const parseUploadResponse = (xhr) => {
+    const contentType = xhr.getResponseHeader("content-type") || "";
+
+    if (contentType.includes("application/json") && xhr.responseText) {
+      return JSON.parse(xhr.responseText);
+    }
+
+    return xhr.responseText;
+  };
+
+  const uploadPdf = (file) => {
+    setFileName(file.name);
+    setUploadProgress(0);
+    setUploadStatus("Preparing upload");
+    setUploadError("");
+    setIsUploading(true);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/documents/upload");
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+
+      const nextProgress = Math.round((event.loaded / event.total) * 100);
+      setUploadProgress(nextProgress);
+      setUploadStatus(nextProgress < 100 ? "Uploading PDF" : "Processing PDF");
+    };
+
+    xhr.onload = () => {
+      try {
+        const response = parseUploadResponse(xhr);
+
+        if (xhr.status < 200 || xhr.status >= 300) {
+          const message =
+            typeof response === "object"
+              ? response?.detail || response?.message || "The PDF could not be uploaded."
+              : response || "The PDF could not be uploaded.";
+          throw new Error(message);
+        }
+
+        setUploadProgress(100);
+        setUploadStatus("Upload complete");
+      } catch (error) {
+        setUploadError(error.message || "The PDF could not be uploaded.");
+        setUploadStatus("Upload failed");
+      } finally {
+        setIsUploading(false);
+      }
+    };
+
+    xhr.onerror = () => {
+      setUploadError("Unable to reach the upload service.");
+      setUploadStatus("Upload failed");
+      setIsUploading(false);
+    };
+
+    xhr.send(formData);
+  };
 
   return (
-    <main className="home-page">
+    <main className={`home-page ${isUploading ? "is-uploading" : ""}`}>
       <header className="home-brand" aria-label="Ozoco">
         <svg className="brand-mark" viewBox="0 0 64 56" aria-hidden="true">
           <path d="M32 4 57 47H7L32 4Z" fill="none" stroke="#247be8" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
@@ -31,7 +101,15 @@ export default function Home() {
 
         <section className="upload-card" aria-label="Upload discharge summary">
           <div className="upload-zone">
-            <Upload className="upload-icon" size={58} strokeWidth={1.8} aria-hidden="true" />
+            <div className={`upload-icon-wrap ${isUploading ? "is-uploading" : ""} ${uploadStatus === "Upload complete" ? "is-complete" : ""}`} aria-hidden="true">
+              {isUploading ? (
+                <LoaderCircle className="upload-icon spin" size={58} strokeWidth={1.8} />
+              ) : uploadStatus === "Upload complete" ? (
+                <CheckCircle2 className="upload-icon" size={58} strokeWidth={1.8} />
+              ) : (
+                <Upload className="upload-icon" size={58} strokeWidth={1.8} />
+              )}
+            </div>
             <h2>Upload your discharge summary</h2>
             <p>Upload your discharge summary to get<br />personalized assistance.</p>
 
@@ -40,16 +118,39 @@ export default function Home() {
               className="home-file-input"
               type="file"
               accept=".pdf,application/pdf"
+              disabled={isUploading}
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) setFileName(file.name);
+                if (file) uploadPdf(file);
                 event.target.value = "";
               }}
             />
-            <button className="home-upload-button" type="button" onClick={chooseFile}>
-              Upload File
+            <button className="home-upload-button" type="button" onClick={chooseFile} disabled={isUploading}>
+              {isUploading ? <UploadCloud size={20} strokeWidth={2} /> : null}
+              {isUploading ? "Uploading..." : "Upload File"}
             </button>
-            <small>{fileName || "PDF, JPG or PNG (Max. 10MB)"}</small>
+            <small>{fileName || "PDF only (Max. 10MB)"}</small>
+
+            {(isUploading || uploadStatus) && (
+              <div className="home-upload-progress" role="status" aria-live="polite">
+                <div className="upload-progress-meta">
+                  <span>{uploadStatus}</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div
+                  className="upload-progress-track"
+                  role="progressbar"
+                  aria-label="PDF upload progress"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow={uploadProgress}
+                >
+                  <span style={{ width: `${uploadProgress}%` }} />
+                </div>
+              </div>
+            )}
+
+            {uploadError ? <div className="home-upload-error">{uploadError}</div> : null}
           </div>
         </section>
       </section>
