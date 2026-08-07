@@ -1,8 +1,9 @@
-import Chatwindow from "./components/Chatwindow"
-import "./App.css"
+import Chatwindow from "./components/Chatwindow";
+import Home from "./Pages/Home";
+import "./App.css";
 
 function App() {
-  return <Chatwindow />
+  return window.location.pathname === "/" ? <Home /> : <Chatwindow />;
 }
 
-export default App
+export default App;
