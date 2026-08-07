@@ -299,6 +299,190 @@ input:focus-visible {
   animation: spin 1s linear infinite;
 }
 
+.home-page {
+  align-items: center;
+  background:
+    linear-gradient(90deg, rgba(244, 248, 255, 0.5), rgba(243, 247, 255, 0.2)),
+    url("./assets/hospital-hero.png") center / cover no-repeat;
+  color: #0c1931;
+  display: flex;
+  justify-content: center;
+  min-height: 100svh;
+  overflow: hidden;
+  padding: 70px 24px 92px;
+  position: relative;
+}
+
+.home-page::after {
+  background: rgba(247, 250, 255, 0.16);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.home-brand,
+.home-content,
+.home-security {
+  position: relative;
+  z-index: 1;
+}
+
+.home-brand {
+  align-items: center;
+  display: flex;
+  font-size: clamp(1.75rem, 2.4vw, 2.6rem);
+  font-weight: 800;
+  gap: 11px;
+  left: 42px;
+  letter-spacing: -0.06em;
+  position: absolute;
+  top: 25px;
+}
+
+.brand-mark {
+  height: 56px;
+  width: 64px;
+}
+
+.home-content {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+}
+
+.buddy-icon {
+  align-items: center;
+  background: linear-gradient(145deg, #2595ed, #3e3cd9);
+  border: 5px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  box-shadow: 0 12px 24px rgba(60, 81, 211, 0.18);
+  color: #fff;
+  display: flex;
+  height: 156px;
+  justify-content: center;
+  margin-bottom: 14px;
+  width: 156px;
+}
+
+.home-content h1 {
+  color: #0b1930;
+  font-size: clamp(2.1rem, 3vw, 3.1rem);
+  letter-spacing: -0.045em;
+  line-height: 1.12;
+  margin: 0;
+}
+
+.home-content h1 span {
+  color: #394dda;
+  display: block;
+}
+
+.home-subtitle {
+  color: #53678e;
+  font-size: clamp(1rem, 1.5vw, 1.28rem);
+  line-height: 1.55;
+  margin: 20px 0 31px;
+}
+
+.upload-card {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 20px;
+  box-shadow: 0 12px 24px rgba(34, 58, 111, 0.14);
+  padding: 24px;
+  width: min(574px, calc(100vw - 48px));
+}
+
+.upload-zone {
+  align-items: center;
+  border: 2px dashed #d5dff5;
+  border-radius: 17px;
+  display: flex;
+  flex-direction: column;
+  min-height: 328px;
+  padding: 39px 24px 28px;
+}
+
+.upload-icon {
+  color: #3d53df;
+  margin-bottom: 20px;
+}
+
+.upload-zone h2 {
+  color: #0e1930;
+  font-size: clamp(1.05rem, 1.5vw, 1.3rem);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  margin: 0;
+}
+
+.upload-zone p {
+  color: #53678e;
+  font-size: 1rem;
+  line-height: 1.45;
+  margin: 7px 0 24px;
+}
+
+.home-file-input {
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  position: absolute;
+  width: 1px;
+}
+
+.home-upload-button {
+  background: linear-gradient(110deg, #3c4dde, #3952df);
+  border: 0;
+  border-radius: 15px;
+  box-shadow: 0 8px 13px rgba(57, 82, 223, 0.16);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 1.08rem;
+  font-weight: 750;
+  min-width: 214px;
+  padding: 15px 28px;
+}
+
+.home-upload-button:hover { filter: brightness(1.06); }
+
+.home-upload-button:focus-visible {
+  outline: 3px solid rgba(58, 80, 222, 0.32);
+  outline-offset: 3px;
+}
+
+.upload-zone small {
+  color: #5b6e91;
+  font-size: 0.98rem;
+  margin-top: 14px;
+}
+
+.home-security {
+  align-items: center;
+  bottom: 29px;
+  color: #51658a;
+  display: flex;
+  font-size: 1rem;
+  gap: 11px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  position: absolute;
+}
+
+@media (max-width: 640px) {
+  .home-page { padding: 100px 16px 90px; }
+  .home-brand { left: 20px; top: 18px; }
+  .brand-mark { height: 42px; width: 48px; }
+  .buddy-icon { height: 120px; width: 120px; }
+  .buddy-icon svg { height: 65px; width: 65px; }
+  .upload-card { padding: 15px; width: calc(100vw - 32px); }
+  .upload-zone { min-height: 294px; padding: 34px 14px 24px; }
+  .home-security { font-size: 0.82rem; bottom: 21px; }
+}
+
 @keyframes spin {
   from {
     transform: rotate(0deg);
