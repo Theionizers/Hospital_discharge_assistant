@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, LoaderCircle, LockKeyhole, Upload, UploadCloud } from "lucide-react";
+import { Bot, CheckCircle2, LoaderCircle, LockKeyhole, MessageCircle, RotateCcw, Upload, UploadCloud } from "lucide-react";
 import { useRef, useState } from "react";
 
 export default function Home() {
@@ -8,6 +8,7 @@ export default function Home() {
   const [uploadStatus, setUploadStatus] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [uploadedDocument, setUploadedDocument] = useState(null);
 
   const chooseFile = () => {
     if (!isUploading) {
@@ -30,6 +31,7 @@ export default function Home() {
     setUploadProgress(0);
     setUploadStatus("Preparing upload");
     setUploadError("");
+    setUploadedDocument(null);
     setIsUploading(true);
 
     const formData = new FormData();
@@ -60,6 +62,8 @@ export default function Home() {
 
         setUploadProgress(100);
         setUploadStatus("Upload complete");
+        setUploadedDocument(response);
+        window.localStorage.setItem("ozocoUploadedDocument", JSON.stringify(response));
       } catch (error) {
         setUploadError(error.message || "The PDF could not be uploaded.");
         setUploadStatus("Upload failed");
@@ -75,6 +79,11 @@ export default function Home() {
     };
 
     xhr.send(formData);
+  };
+
+  const continueToChat = () => {
+    window.history.pushState({}, "", "/chat");
+    window.dispatchEvent(new PopStateEvent("popstate"));
   };
 
   return (
@@ -130,6 +139,19 @@ export default function Home() {
               {isUploading ? "Uploading..." : "Upload File"}
             </button>
             <small>{fileName || "PDF only (Max. 10MB)"}</small>
+
+            {uploadedDocument ? (
+              <div className="home-upload-actions" aria-label="Upload complete actions">
+                <button className="home-chat-button" type="button" onClick={continueToChat}>
+                  <MessageCircle size={20} strokeWidth={2} />
+                  Continue to chat
+                </button>
+                <button className="home-reupload-button" type="button" onClick={chooseFile}>
+                  <RotateCcw size={19} strokeWidth={2} />
+                  Reupload PDF
+                </button>
+              </div>
+            ) : null}
 
             {(isUploading || uploadStatus) && (
               <div className="home-upload-progress" role="status" aria-live="polite">
