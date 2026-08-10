@@ -97,12 +97,24 @@ export default function Chatwindow() {
 
   useEffect(() => {
     const list = messageListRef.current;
-    if (!list) return;
+    const end = messagesEndRef.current;
 
-    list.scrollTo({
-      top: list.scrollHeight,
-      behavior: "smooth",
-    });
+    if (!list && !end) return;
+
+    const scrollToLatest = () => {
+      if (end) {
+        end.scrollIntoView({ behavior: "smooth", block: "end" });
+      }
+
+      if (list) {
+        list.scrollTo({
+          top: list.scrollHeight,
+          behavior: "smooth",
+        });
+      }
+    };
+
+    requestAnimationFrame(scrollToLatest);
   }, [messages, isSending, voiceLoading]);
 
   useEffect(() => {
@@ -308,6 +320,7 @@ export default function Chatwindow() {
       });
 
       const { data, isJson, isAudio } = await parseResponse(response);
+      console.log("[Voice] Backend response:", { ok: response.ok, isJson, data });
 
       if (!response.ok) {
         const message = isJson
@@ -319,9 +332,10 @@ export default function Chatwindow() {
       // ---- New JSON format: { text, response, audio_base64, thread_id } ----
       if (isJson && data?.response) {
         const transcript = (data.text || "").trim();
+        console.log(`[Voice] Transcript from backend: "${transcript}"`);
         if (!transcript) {
           setVoiceStatus("");
-          setVoiceError("No voice detected. Please try again.");
+          setVoiceError("No voice detected. Please speak louder or hold the microphone closer and try again.");
           return;
         }
 
@@ -467,6 +481,22 @@ export default function Chatwindow() {
     measure();
   };
 
+  const getVoiceMimeType = () => {
+    if (typeof MediaRecorder === "undefined") return "";
+
+    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
+    return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+  };
+
+  const getVoiceFileExtension = (mimeType) => {
+    if (!mimeType) return "webm";
+    if (mimeType.includes("wav")) return "wav";
+    if (mimeType.includes("ogg")) return "ogg";
+    if (mimeType.includes("mp4")) return "m4a";
+    if (mimeType.includes("mpeg")) return "mp3";
+    return "webm";
+  };
+
   const startVoiceRecording = async () => {
     setVoiceError("");
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -476,11 +506,21 @@ export default function Chatwindow() {
 
     try {
       console.log("[Voice] Requesting microphone access...");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        },
+      });
       console.log("[Voice] Microphone access granted.");
       recordingChunksRef.current = [];
       startVoiceMeter(stream);
-      const recorder = new MediaRecorder(stream);
+
+      const mimeType = getVoiceMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
 
       recorder.addEventListener("dataavailable", (event) => {
         if (event.data && event.data.size > 0) {
@@ -489,25 +529,36 @@ export default function Chatwindow() {
         }
       });
 
+      const recordingStartTime = Date.now();
+
       recorder.addEventListener("stop", async () => {
-        const heardVoice = voiceMeterRef.current.heardVoice;
         stopVoiceMeter();
         stream.getTracks().forEach((track) => track.stop());
         setIsRecording(false);
 
+        const durationMs = Date.now() - recordingStartTime;
         const totalSize = recordingChunksRef.current.reduce((sum, c) => sum + c.size, 0);
-        console.log(`[Voice] Recording stopped. ${recordingChunksRef.current.length} chunks, ${totalSize} bytes total.`);
+        console.log(`[Voice] Recording stopped. ${recordingChunksRef.current.length} chunks, ${totalSize} bytes total, duration=${durationMs}ms, mimeType=${recorder.mimeType}`);
 
-        const recordedBlob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        if (recordedBlob.size === 0 || !heardVoice) {
+        // Require at least 1 second of recording for Whisper to work
+        if (durationMs < 1000) {
           setVoiceStatus("");
-          setVoiceError("No voice detected. Please try again.");
+          setVoiceError("Recording was too short. Please hold for at least 1 second.");
           return;
         }
 
-        console.log(`[Voice] Sending ${recordedBlob.size} bytes to backend...`);
+        const blobMime = recorder.mimeType || "audio/webm";
+        const recordedBlob = new Blob(recordingChunksRef.current, { type: blobMime });
+        if (recordedBlob.size === 0) {
+          setVoiceStatus("");
+          setVoiceError("No audio was captured. Please try again.");
+          return;
+        }
+
+        console.log(`[Voice] Sending ${recordedBlob.size} bytes (${blobMime}) to backend...`);
         setVoiceStatus("Processing your voice...");
-        const file = new File([recordedBlob], `voice-${Date.now()}.webm`, { type: recordedBlob.type });
+        const extension = getVoiceFileExtension(blobMime);
+        const file = new File([recordedBlob], `voice-${Date.now()}.${extension}`, { type: blobMime });
         await sendVoiceFile(file);
       });
 
@@ -701,7 +752,7 @@ export default function Chatwindow() {
                 </div>
               </div>
             ) : (
-              <div className="cb-message-list">
+              <div className="cb-message-list" ref={messageListRef}>
                 {messages.map((message, index) => (
                   <div key={`${message.role}-${index}`} className={`cb-message ${message.role}`}>
                     <span>{message.role === "user" ? "You" : "Ozoco ChatBuddy"}</span>

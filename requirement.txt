@@ -5,8 +5,8 @@ pydantic
 pydantic-settings
 python-dotenv
 python-multipart
-pypdf
 PyMuPDF
+openai
 langchain
 langchain-openai
 langgraph

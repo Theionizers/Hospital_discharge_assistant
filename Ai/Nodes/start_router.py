@@ -1,6 +1,6 @@
 from pprint import pprint
 from Ai.llm import llm
-from langchain.messages import HumanMessage,SystemMessage,AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from Ai.State.Graph_state import Hopitaldata
 
 
