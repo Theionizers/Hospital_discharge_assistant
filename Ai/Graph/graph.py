@@ -17,6 +17,35 @@ from langgraph.graph import StateGraph, START, END
 from uuid import uuid4
 
 
+def _content_to_text(content) -> str:
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        text_parts = []
+        for item in content:
+            if isinstance(item, str):
+                text_parts.append(item)
+            elif isinstance(item, dict):
+                text_parts.append(
+                    item.get("text")
+                    or item.get("content")
+                    or item.get("delta")
+                    or ""
+                )
+        return "".join(text_parts)
+
+    if isinstance(content, dict):
+        return (
+            content.get("text")
+            or content.get("content")
+            or content.get("delta")
+            or ""
+        )
+
+    return ""
+
+
 def build_graph():
     builder = StateGraph(Hopitaldata)
 
@@ -116,6 +145,74 @@ def invoke_workflow(
         "thread_id": config["configurable"]["thread_id"],
         "intention": final_intention or final_state.get("intention", ""),
         "response": final_response or final_state.get("response", ""),
+    }
+
+
+def stream_workflow(
+    user_message: str,
+    *,
+    thread_id: str | None = None,
+    document_text: str | None = None,
+):
+    state = {
+        "user_message": user_message,
+        "messages": [],
+        "intention": "",
+        "response": "",
+    }
+    if document_text:
+        state["document_text"] = document_text
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id or f"thread_{uuid4().hex}"
+        }
+    }
+
+    final_response = ""
+    final_intention = ""
+    final_state = state
+    emitted_text = False
+
+    graph = build_graph().compile(checkpointer=False)
+
+    for stream_mode, chunk in graph.stream(
+        state,
+        config=config,
+        stream_mode=["messages", "updates"],
+    ):
+        if stream_mode == "messages":
+            message_chunk, _metadata = chunk
+            token = _content_to_text(getattr(message_chunk, "content", ""))
+            if token:
+                emitted_text = True
+                yield {
+                    "type": "token",
+                    "content": token,
+                }
+            continue
+
+        if stream_mode == "updates":
+            for node_output in chunk.values():
+                if "response" in node_output:
+                    final_response = node_output["response"]
+                if "intention" in node_output:
+                    final_intention = node_output["intention"]
+                final_state.update(node_output)
+
+    response_text = final_response or final_state.get("response", "")
+
+    if response_text and not emitted_text:
+        yield {
+            "type": "token",
+            "content": response_text,
+        }
+
+    yield {
+        "type": "done",
+        "thread_id": config["configurable"]["thread_id"],
+        "intention": final_intention or final_state.get("intention", ""),
+        "response": response_text,
     }
 
 

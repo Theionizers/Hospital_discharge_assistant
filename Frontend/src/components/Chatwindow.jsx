@@ -61,6 +61,7 @@ export default function Chatwindow() {
   const [input, setInput] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isStreamingAnswer, setIsStreamingAnswer] = useState(false);
   const [error, setError] = useState("");
   const [storedFilename, setStoredFilename] = useState("");
   const [threadId, setThreadId] = useState("");
@@ -221,7 +222,7 @@ export default function Chatwindow() {
     setMessages((prev) => [...prev, { role: "user", content: trimmedQuestion }]);
 
     try {
-      const response = await fetch("/documents/chat", {
+      const response = await fetch("/documents/chat/stream", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -233,27 +234,91 @@ export default function Chatwindow() {
         }),
       });
 
-      const { data, isJson } = await parseResponse(response);
-
       if (!response.ok) {
+        const { data, isJson } = await parseResponse(response);
         const message = isJson ? data?.detail || data?.message || "The assistant could not answer right now." : data || "The assistant could not answer right now.";
         throw new Error(message);
       }
 
-      const assistantReply = isJson ? data?.response || data?.message || JSON.stringify(data, null, 2) : data;
-      const nextThreadId = isJson ? data?.thread_id : "";
-
-      if (nextThreadId) {
-        setThreadId(nextThreadId);
+      if (!response.body) {
+        throw new Error("Streaming is not supported by this browser.");
       }
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: assistantReply || "I received your question, but no response text came back.",
-        },
-      ]);
+      let assistantReply = "";
+      let buffer = "";
+      const decoder = new TextDecoder();
+      const reader = response.body.getReader();
+
+      setIsStreamingAnswer(true);
+      setMessages((prev) => [...prev, { role: "assistant", content: "Thinking..." }]);
+
+      const updateAssistantMessage = (content) => {
+        setMessages((prev) => {
+          const next = [...prev];
+          const lastIndex = next.length - 1;
+          if (lastIndex >= 0 && next[lastIndex].role === "assistant") {
+            next[lastIndex] = {
+              ...next[lastIndex],
+              content: content || "Thinking...",
+            };
+          }
+          return next;
+        });
+      };
+
+      const handleEvent = (rawEvent) => {
+        const dataLine = rawEvent
+          .split("\n")
+          .find((line) => line.startsWith("data:"));
+
+        if (!dataLine) return;
+
+        const payload = JSON.parse(dataLine.slice(5).trim());
+
+        if (payload.type === "token") {
+          if (typeof payload.content !== "string") return;
+          assistantReply += payload.content;
+          updateAssistantMessage(assistantReply);
+          return;
+        }
+
+        if (payload.type === "done") {
+          if (payload.thread_id) {
+            setThreadId(payload.thread_id);
+          }
+          if (!assistantReply && payload.response) {
+            assistantReply = payload.response;
+            updateAssistantMessage(assistantReply);
+          }
+          return;
+        }
+
+        if (payload.type === "error") {
+          throw new Error(payload.message || "The assistant could not answer right now.");
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+
+        events.forEach((event) => {
+          if (event.trim()) handleEvent(event);
+        });
+      }
+
+      buffer += decoder.decode();
+      if (buffer.trim()) {
+        handleEvent(buffer);
+      }
+
+      if (!assistantReply) {
+        updateAssistantMessage("I received your question, but no response text came back.");
+      }
     } catch (err) {
       setError(err.message || "Something went wrong while sending your question.");
       setMessages((prev) => [
@@ -264,6 +329,7 @@ export default function Chatwindow() {
         },
       ]);
     } finally {
+      setIsStreamingAnswer(false);
       setIsSending(false);
     }
   };
@@ -760,7 +826,7 @@ export default function Chatwindow() {
                     {message.audioUrl ? <audio controls preload="none" src={message.audioUrl} /> : null}
                   </div>
                 ))}
-                {isSending || voiceLoading ? (
+                {(isSending && !isStreamingAnswer) || voiceLoading ? (
                   <div className="cb-message assistant">
                     <span>Ozoco ChatBuddy</span>
                     <p>{voiceLoading ? "Processing your voice message..." : "Thinking..."}</p>

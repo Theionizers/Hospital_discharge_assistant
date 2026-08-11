@@ -8,6 +8,7 @@ from openai import OpenAI
 import base64
 import uuid
 import io
+import json
 
 from Backend.Services.pdf_services import extract_pages
 from Backend.Services.json_services import (
@@ -15,7 +16,7 @@ from Backend.Services.json_services import (
     read_extracted_json,
 )
 
-from Ai.Graph.graph import invoke_workflow
+from Ai.Graph.graph import invoke_workflow, stream_workflow
 
 
 # ============================================================
@@ -212,6 +213,32 @@ async def chat_with_document(request: ChatRequest):
     )
 
     return result
+
+
+@router.post("/chat/stream")
+async def chat_with_document_stream(request: ChatRequest):
+    document_text = _load_document_text(request.stored_filename)
+
+    def event_stream():
+        try:
+            for event in stream_workflow(
+                user_message=request.message,
+                thread_id=request.thread_id,
+                document_text=document_text,
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as exc:
+            error_event = {"type": "error", "message": str(exc)}
+            yield f"data: {json.dumps(error_event)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ============================================================
