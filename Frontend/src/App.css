@@ -2339,8 +2339,43 @@ input:focus-visible {
   color: #8997ae;
 }
 
+.cb-composer.is-recording {
+  background: #ffffff;
+  border-color: rgba(255, 76, 125, 0.24);
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding-left: 18px;
+}
+
+.cb-composer.is-recording input,
+.cb-composer.is-recording .cb-send-button {
+  display: none;
+}
+
+.cb-recording-meter {
+  align-items: center;
+  display: flex;
+  gap: 5px;
+  height: 42px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 4px;
+}
+
+.cb-recording-meter span {
+  background: linear-gradient(180deg, #ff4c7d, #7452ea);
+  border-radius: 999px;
+  display: block;
+  flex: 1 1 8px;
+  height: calc(8px + (var(--bar-height) * 31px));
+  max-width: 9px;
+  min-width: 4px;
+  transform-origin: center;
+  transition: height 80ms ease;
+}
+
 .cb-mic-button,
-.cb-send-button {
+.cb-send-button,
+.cb-stop-recording-button {
   align-items: center;
   border: 0;
   border-radius: 999px;
@@ -2362,6 +2397,13 @@ input:focus-visible {
   color: #ffffff;
   height: 60px;
   width: 60px;
+}
+
+.cb-stop-recording-button {
+  background: #171b2f;
+  color: #ffffff;
+  height: 52px;
+  width: 52px;
 }
 
 .cb-send-button:disabled,

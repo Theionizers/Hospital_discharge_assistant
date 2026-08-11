@@ -305,3 +305,73 @@ async def voice_chat(
     except Exception as exc:
         print(f"Voice error: {exc}")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/voice/stream")
+async def voice_chat_stream(
+    audio: UploadFile = File(...),
+    thread_id: str | None = Form(None),
+    stored_filename: str | None = Form(None),
+):
+    audio_bytes = await audio.read()
+
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Audio file is empty")
+
+    filename = audio.filename
+    print(f"Voice stream | file={filename}  type={audio.content_type}  size={len(audio_bytes)}")
+
+    async def event_stream():
+        try:
+            yield f"data: {json.dumps({'type': 'status', 'message': 'Transcribing your voice...'})}\n\n"
+
+            user_text = await speech_to_text(audio_bytes, filename)
+            print(f"Voice stream | user said: {user_text}")
+
+            if not user_text:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'No voice detected. Please speak louder or hold the microphone closer and try again.'})}\n\n"
+                return
+
+            yield f"data: {json.dumps({'type': 'transcript', 'text': user_text})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', 'message': 'Writing the answer...'})}\n\n"
+
+            document_text = _load_document_text(stored_filename)
+            response_text = ""
+            response_thread_id = thread_id or ""
+            response_intention = ""
+
+            for event in stream_workflow(
+                user_message=user_text,
+                thread_id=thread_id,
+                document_text=document_text,
+            ):
+                if event.get("type") == "token":
+                    response_text += event.get("content", "")
+
+                if event.get("type") == "done":
+                    response_text = event.get("response") or response_text
+                    response_thread_id = event.get("thread_id", response_thread_id)
+                    response_intention = event.get("intention", "")
+
+                yield f"data: {json.dumps(event)}\n\n"
+
+            yield f"data: {json.dumps({'type': 'status', 'message': 'Creating voice reply...'})}\n\n"
+
+            tts_bytes = await text_to_speech(response_text)
+            audio_b64 = base64.b64encode(tts_bytes).decode("utf-8") if tts_bytes else ""
+
+            yield f"data: {json.dumps({'type': 'audio', 'audio_base64': audio_b64})}\n\n"
+            yield f"data: {json.dumps({'type': 'voice_done', 'text': user_text, 'response': response_text, 'thread_id': response_thread_id, 'intention': response_intention})}\n\n"
+
+        except Exception as exc:
+            print(f"Voice stream error: {exc}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

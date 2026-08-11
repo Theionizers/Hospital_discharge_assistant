@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
+  Square,
   Stethoscope,
   UploadCloud,
   UsersRound,
@@ -67,9 +68,11 @@ export default function Chatwindow() {
   const [threadId, setThreadId] = useState("");
   const [documentMeta, setDocumentMeta] = useState(null);
   const [voiceLoading, setVoiceLoading] = useState(false);
+  const [isStreamingVoice, setIsStreamingVoice] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("");
   const [voiceError, setVoiceError] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [voiceLevel, setVoiceLevel] = useState(0);
   const fileInputRef = useRef(null);
   const messageListRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -80,6 +83,7 @@ export default function Chatwindow() {
     analyser: null,
     frameId: null,
     heardVoice: false,
+    lastLevelUpdate: 0,
   });
 
   const hasConversation = messages.length > 1;
@@ -371,117 +375,166 @@ export default function Chatwindow() {
     setVoiceError("");
     setVoiceStatus("Sending voice request...");
     setVoiceLoading(true);
+    setIsStreamingVoice(false);
 
     const formData = new FormData();
     formData.append("audio", file, file.name);
-    // Pass thread_id and stored_filename so the backend can maintain
-    // conversation context and load the correct document.
     if (threadId) formData.append("thread_id", threadId);
     if (storedFilename) formData.append("stored_filename", storedFilename);
 
+    let hasTranscript = false;
+
     try {
-      const response = await fetch("/documents/voice", {
+      const response = await fetch("/documents/voice/stream", {
         method: "POST",
         body: formData,
       });
 
-      const { data, isJson, isAudio } = await parseResponse(response);
-      console.log("[Voice] Backend response:", { ok: response.ok, isJson, data });
-
       if (!response.ok) {
+        const { data, isJson } = await parseResponse(response);
         const message = isJson
           ? data?.detail || data?.message || "Voice request failed."
           : data || "Voice request failed.";
         throw new Error(message);
       }
 
-      // ---- New JSON format: { text, response, audio_base64, thread_id } ----
-      if (isJson && data?.response) {
-        const transcript = (data.text || "").trim();
-        console.log(`[Voice] Transcript from backend: "${transcript}"`);
-        if (!transcript) {
-          setVoiceStatus("");
-          setVoiceError("No voice detected. Please speak louder or hold the microphone closer and try again.");
+      if (!response.body) {
+        throw new Error("Streaming is not supported by this browser.");
+      }
+
+      let assistantReply = "";
+      let buffer = "";
+      let hasAssistantMessage = false;
+      const decoder = new TextDecoder();
+      const reader = response.body.getReader();
+
+      const updateAssistantMessage = (content) => {
+        setMessages((prev) => {
+          const next = [...prev];
+          const lastIndex = next.length - 1;
+          if (lastIndex >= 0 && next[lastIndex].role === "assistant") {
+            next[lastIndex] = {
+              ...next[lastIndex],
+              content: content || "Thinking...",
+            };
+          }
+          return next;
+        });
+      };
+
+      const ensureAssistantMessage = () => {
+        if (hasAssistantMessage) return;
+        hasAssistantMessage = true;
+        setIsStreamingVoice(true);
+        setMessages((prev) => [...prev, { role: "assistant", content: "Thinking..." }]);
+      };
+
+      const handleEvent = (rawEvent) => {
+        const dataLine = rawEvent
+          .split("\n")
+          .find((line) => line.startsWith("data:"));
+
+        if (!dataLine) return;
+
+        const payload = JSON.parse(dataLine.slice(5).trim());
+
+        if (payload.type === "status") {
+          setVoiceStatus(payload.message || "");
           return;
         }
 
-        // Show what the user said
-        if (data.text) {
+        if (payload.type === "transcript") {
+          const transcript = (payload.text || "").trim();
+          if (!transcript) return;
+          hasTranscript = true;
+          setIsStreamingVoice(true);
+          setVoiceStatus("Writing the answer...");
           setMessages((prev) => [...prev, { role: "user", content: transcript }]);
-        } else {
-          setMessages((prev) => [...prev, { role: "user", content: "🎤 Voice message" }]);
+          return;
         }
 
-        // Update thread_id if backend returned one
-        if (data.thread_id) {
-          setThreadId(data.thread_id);
+        if (payload.type === "token") {
+          if (typeof payload.content !== "string") return;
+          ensureAssistantMessage();
+          assistantReply += payload.content;
+          updateAssistantMessage(assistantReply);
+          return;
         }
 
-        // Show AI text response
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: data.response,
-          },
-        ]);
-
-        // Auto-play the TTS audio
-        if (data.audio_base64) {
-          playBase64Audio(data.audio_base64);
+        if (payload.type === "done") {
+          ensureAssistantMessage();
+          if (payload.thread_id) {
+            setThreadId(payload.thread_id);
+          }
+          if (!assistantReply && payload.response) {
+            assistantReply = payload.response;
+            updateAssistantMessage(assistantReply);
+          }
+          return;
         }
 
-        setVoiceStatus("Voice response added to chat.");
-        return;
+        if (payload.type === "audio") {
+          if (payload.audio_base64) {
+            playBase64Audio(payload.audio_base64);
+          }
+          return;
+        }
+
+        if (payload.type === "voice_done") {
+          if (payload.thread_id) {
+            setThreadId(payload.thread_id);
+          }
+          if (!assistantReply && payload.response) {
+            ensureAssistantMessage();
+            assistantReply = payload.response;
+            updateAssistantMessage(assistantReply);
+          }
+          setVoiceStatus("Voice response added to chat.");
+          return;
+        }
+
+        if (payload.type === "error") {
+          throw new Error(payload.message || "Voice request failed.");
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+
+        events.forEach((event) => {
+          if (event.trim()) handleEvent(event);
+        });
       }
 
-      // ---- Legacy: raw audio stream (backward compat) ----
-      if (isAudio) {
-        const audioUrl = URL.createObjectURL(data);
-        setMessages((prev) => [
-          ...prev,
-          { role: "user", content: "🎤 Voice message" },
-        ]);
-        setVoiceStatus("Audio response ready. Press play to hear it.");
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: "I received an audio response from the voice service.",
-            audioUrl,
-          },
-        ]);
-        return;
+      buffer += decoder.decode();
+      if (buffer.trim()) {
+        handleEvent(buffer);
       }
 
-      // ---- Fallback: plain text or unexpected JSON ----
-      const assistantReply = isJson
-        ? data?.response || data?.message || JSON.stringify(data, null, 2)
-        : data;
+      if (!hasTranscript) {
+        throw new Error("No voice detected. Please speak louder or hold the microphone closer and try again.");
+      }
 
-      setMessages((prev) => [
-        ...prev,
-        { role: "user", content: "🎤 Voice message" },
-      ]);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: assistantReply || "Voice response received.",
-        },
-      ]);
-      setVoiceStatus("Voice response added to chat.");
+      if (hasAssistantMessage && !assistantReply) {
+        updateAssistantMessage("Voice response received.");
+      }
     } catch (err) {
       setVoiceError(err.message || "Unable to process voice audio.");
       setMessages((prev) => [
         ...prev,
-        { role: "user", content: "🎤 Voice message" },
+        ...(!hasTranscript ? [{ role: "user", content: "Voice message" }] : []),
         {
           role: "assistant",
           content: "I couldn't process that voice message. Please try again.",
         },
       ]);
     } finally {
+      setIsStreamingVoice(false);
       setVoiceLoading(false);
     }
   };
@@ -507,7 +560,9 @@ export default function Chatwindow() {
       analyser: null,
       frameId: null,
       heardVoice: meter.heardVoice,
+      lastLevelUpdate: 0,
     };
+    setVoiceLevel(0);
   };
 
   const startVoiceMeter = (stream) => {
@@ -526,6 +581,7 @@ export default function Chatwindow() {
       analyser,
       frameId: null,
       heardVoice: false,
+      lastLevelUpdate: 0,
     };
 
     const measure = () => {
@@ -539,6 +595,12 @@ export default function Chatwindow() {
       const rms = Math.sqrt(sum / samples.length);
       if (rms > 0.025) {
         voiceMeterRef.current.heardVoice = true;
+      }
+
+      const now = performance.now();
+      if (now - voiceMeterRef.current.lastLevelUpdate > 80) {
+        voiceMeterRef.current.lastLevelUpdate = now;
+        setVoiceLevel(Math.min(1, rms * 12));
       }
 
       voiceMeterRef.current.frameId = requestAnimationFrame(measure);
@@ -826,7 +888,7 @@ export default function Chatwindow() {
                     {message.audioUrl ? <audio controls preload="none" src={message.audioUrl} /> : null}
                   </div>
                 ))}
-                {(isSending && !isStreamingAnswer) || voiceLoading ? (
+                {(isSending && !isStreamingAnswer) || (voiceLoading && !isStreamingVoice) ? (
                   <div className="cb-message assistant">
                     <span>Ozoco ChatBuddy</span>
                     <p>{voiceLoading ? "Processing your voice message..." : "Thinking..."}</p>
@@ -853,13 +915,28 @@ export default function Chatwindow() {
           </div>
 
           <footer className="cb-composer-wrap">
-            <form className="cb-composer" onSubmit={handleSend}>
+            <form className={`cb-composer ${isRecording ? "is-recording" : ""}`} onSubmit={handleSend}>
               <input
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 placeholder="Type your message here..."
                 disabled={isSending}
               />
+              {isRecording ? (
+                <div className="cb-recording-meter" aria-label="Voice level">
+                  {Array.from({ length: 18 }).map((_, index) => {
+                    const distanceFromCenter = Math.abs(index - 8.5) / 8.5;
+                    const baseHeight = 0.18 + (1 - distanceFromCenter) * 0.25;
+                    const height = Math.max(0.12, Math.min(1, baseHeight + voiceLevel * (0.95 - distanceFromCenter * 0.35)));
+                    return (
+                      <span
+                        key={index}
+                        style={{ "--bar-height": height }}
+                      />
+                    );
+                  })}
+                </div>
+              ) : null}
               <button
                 className={`cb-mic-button ${isRecording ? "is-recording" : ""}`}
                 type="button"
@@ -869,6 +946,16 @@ export default function Chatwindow() {
               >
                 {isRecording ? <MicOff size={23} /> : <Mic size={23} />}
               </button>
+              {isRecording ? (
+                <button
+                  className="cb-stop-recording-button"
+                  type="button"
+                  aria-label="Stop recording"
+                  onClick={stopVoiceRecording}
+                >
+                  <Square size={18} fill="currentColor" />
+                </button>
+              ) : null}
               <button className="cb-send-button" type="submit" aria-label="Send message" disabled={isSending || !input.trim()}>
                 {isSending ? <LoaderCircle className="spin" size={22} /> : <Send size={23} />}
               </button>
