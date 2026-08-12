@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import MobileChatbot from "./MobileChatbot";
 import {
   ArrowRight,
   Bot,
@@ -51,6 +52,25 @@ const suggestedPrompts = [
 ];
 
 export default function Chatwindow() {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth <= 768;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  if (isMobile) {
+    return <MobileChatbot />;
+  }
+
   const [messages, setMessages] = useState(() => {
     // Load persisted messages on first render
     try {
