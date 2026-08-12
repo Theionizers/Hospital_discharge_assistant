@@ -30,7 +30,6 @@ import {
   X,
 } from "lucide-react";
 
-// Suggested action pills matching screenshot exactly
 const suggestedPrompts = [
   { icon: Clock3, text: "What are the visiting hours?" },
   { icon: Hospital, text: "List of departments in the hospital" },
@@ -62,27 +61,57 @@ const initialMessages = [
   },
 ];
 
+const defaultSession = {
+  id: "session-default",
+  title: "Visiting Hours Inquiry",
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+  threadId: "",
+  storedFilename: "",
+  documentMeta: null,
+  messages: initialMessages,
+};
+
 export default function MobileChatbot() {
-  const [messages, setMessages] = useState(() => {
+  // Multiple Chat Conversations State
+  const [sessions, setSessions] = useState(() => {
     try {
-      const saved = window.localStorage.getItem("ozocoMobileMessages");
-      if (saved) return JSON.parse(saved);
-    } catch {
-      /* fallback */
-    }
-    return initialMessages;
+      const saved = localStorage.getItem("ozocoChatSessions");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [defaultSession];
   });
+
+  const [activeSessionId, setActiveSessionId] = useState(() => {
+    try {
+      const savedId = localStorage.getItem("ozocoActiveSessionId");
+      if (savedId) return savedId;
+    } catch {}
+    return "session-default";
+  });
+
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('ozocoTheme') || 'dark';
+  });
+
+  const activeSession =
+    sessions.find((s) => s.id === activeSessionId) || sessions[0] || defaultSession;
+
+  const messages = activeSession.messages || initialMessages;
+  const threadId = activeSession.threadId || "";
+  const storedFilename = activeSession.storedFilename || "";
+  const documentMeta = activeSession.documentMeta || null;
 
   const [input, setInput] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isStreamingAnswer, setIsStreamingAnswer] = useState(false);
   const [error, setError] = useState("");
-  const [storedFilename, setStoredFilename] = useState("");
-  const [threadId, setThreadId] = useState("");
-  const [documentMeta, setDocumentMeta] = useState(null);
 
-  // Voice States & Meters
+  // Voice States
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("");
   const [voiceError, setVoiceError] = useState("");
@@ -98,6 +127,8 @@ export default function MobileChatbot() {
   const messagesEndRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordingChunksRef = useRef([]);
+  const activeAudioRef = useRef(null);
+  const activeAudioUrlRef = useRef(null);
 
   const voiceMeterRef = useRef({
     audioContext: null,
@@ -107,17 +138,49 @@ export default function MobileChatbot() {
     lastLevelUpdate: 0,
   });
 
-  // Save messages to localStorage
+  const stopVoiceOutput = () => {
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current.currentTime = 0;
+      activeAudioRef.current = null;
+    }
+    if (activeAudioUrlRef.current) {
+      URL.revokeObjectURL(activeAudioUrlRef.current);
+      activeAudioUrlRef.current = null;
+    }
+  };
+
+  const stopAllVoice = () => {
+    stopVoiceOutput();
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+    }
+
+    const meter = voiceMeterRef.current;
+    if (meter.frameId) cancelAnimationFrame(meter.frameId);
+    if (meter.audioContext) meter.audioContext.close().catch(() => {});
+    voiceMeterRef.current = {
+      audioContext: null,
+      analyser: null,
+      frameId: null,
+      heardVoice: meter.heardVoice,
+      lastLevelUpdate: 0,
+    };
+
+    setIsRecording(false);
+    setVoiceLoading(false);
+    setVoiceStatus("");
+  };
+
+  // Save sessions to localStorage whenever state changes
   useEffect(() => {
     try {
-      window.localStorage.setItem(
-        "ozocoMobileMessages",
-        JSON.stringify(messages)
-      );
-    } catch {
-      /* ignore */
-    }
-  }, [messages]);
+      localStorage.setItem("ozocoChatSessions", JSON.stringify(sessions));
+      localStorage.setItem("ozocoActiveSessionId", activeSessionId);
+    } catch {}
+  }, [sessions, activeSessionId]);
 
   // Internal Scroll: Always scroll to latest message inside chat body
   useEffect(() => {
@@ -128,25 +191,91 @@ export default function MobileChatbot() {
         behavior: "smooth",
       });
     }
-  }, [messages, isSending, voiceLoading, isUploading]);
+  }, [messages, isSending, voiceLoading, isUploading, activeSessionId]);
 
-  // Load persisted uploaded document metadata
-  useEffect(() => {
-    const savedDocument = window.localStorage.getItem("ozocoUploadedDocument");
-    if (!savedDocument) return;
+  // Helper to update active session state
+  const updateActiveSession = (updater) => {
+    setSessions((prevSessions) =>
+      prevSessions.map((session) => {
+        if (session.id === activeSessionId) {
+          const updated =
+            typeof updater === "function" ? updater(session) : updater;
+          return { ...session, ...updated, updatedAt: Date.now() };
+        }
+        return session;
+      })
+    );
+  };
 
-    try {
-      const payload = JSON.parse(savedDocument);
-      setStoredFilename(payload.stored_filename || "");
-      setThreadId(payload.thread_id || "");
-      setDocumentMeta({
-        filename: payload.original_filename || "Hospital_Guide.pdf",
-        pages: payload.pages || 0,
-      });
-    } catch {
-      window.localStorage.removeItem("ozocoUploadedDocument");
-    }
-  }, []);
+  // Multiple Conversations Management
+  const createNewChat = () => {
+    stopAllVoice();
+
+    const newId = `session-${Date.now()}`;
+    const newSession = {
+      id: newId,
+      title: "New Chat",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      threadId: "",
+      storedFilename: storedFilename,
+      documentMeta: documentMeta,
+      messages: [
+        {
+          id: Date.now().toString(),
+          role: "assistant",
+          content: "Hi! How can I help you today?",
+          time: formatTime(),
+        },
+      ],
+    };
+
+    setSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(newId);
+    setIsHistoryOpen(false);
+    setIsMenuOpen(false);
+  };
+
+  const switchChat = (sessionId) => {
+    stopAllVoice();
+    setActiveSessionId(sessionId);
+    setIsHistoryOpen(false);
+    setIsMenuOpen(false);
+  };
+
+  const deleteChat = (sessionId, e) => {
+    if (e) e.stopPropagation();
+    setSessions((prev) => {
+      const filtered = prev.filter((s) => s.id !== sessionId);
+      if (filtered.length === 0) {
+        const fresh = {
+          id: `session-${Date.now()}`,
+          title: "New Chat",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          threadId: "",
+          storedFilename: "",
+          documentMeta: null,
+          messages: initialMessages,
+        };
+        setActiveSessionId(fresh.id);
+        return [fresh];
+      }
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(filtered[0].id);
+      }
+      return filtered;
+    });
+  };
+
+  const clearChatHistory = () => {
+    updateActiveSession({
+      messages: initialMessages,
+      threadId: "",
+    });
+    setIsHistoryOpen(false);
+    setIsMenuOpen(false);
+  };
 
   const formatTime = () => {
     const date = new Date();
@@ -172,6 +301,8 @@ export default function MobileChatbot() {
   // Audio Playback for TTS Response
   const playBase64Audio = (base64Data) => {
     if (!base64Data) return;
+    stopVoiceOutput();
+
     try {
       const byteChars = atob(base64Data);
       const byteNumbers = new Uint8Array(byteChars.length);
@@ -181,8 +312,16 @@ export default function MobileChatbot() {
       const blob = new Blob([byteNumbers], { type: "audio/mpeg" });
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
+      activeAudioRef.current = audio;
+      activeAudioUrlRef.current = url;
       audio.play().catch((err) => console.error("Audio playback error:", err));
-      audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+      audio.addEventListener("ended", () => {
+        if (activeAudioRef.current === audio) activeAudioRef.current = null;
+        if (activeAudioUrlRef.current === url) {
+          URL.revokeObjectURL(url);
+          activeAudioUrlRef.current = null;
+        }
+      });
     } catch (err) {
       console.error("Failed to decode base64 audio:", err);
     }
@@ -287,29 +426,30 @@ export default function MobileChatbot() {
       const decoder = new TextDecoder();
       const reader = response.body.getReader();
       let buffer = "";
-
       let assistantMsgAdded = false;
 
       const updateAssistantMessage = (content) => {
-        setMessages((prev) =>
-          prev.map((msg) =>
+        updateActiveSession((sess) => ({
+          messages: sess.messages.map((msg) =>
             msg.id === assistantMsgId ? { ...msg, content: content || "..." } : msg
-          )
-        );
+          ),
+        }));
       };
 
       const ensureAssistantMessage = () => {
         if (assistantMsgAdded) return;
         assistantMsgAdded = true;
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: assistantMsgId,
-            role: "assistant",
-            content: "...",
-            time: formatTime(),
-          },
-        ]);
+        updateActiveSession((sess) => ({
+          messages: [
+            ...sess.messages,
+            {
+              id: assistantMsgId,
+              role: "assistant",
+              content: "...",
+              time: formatTime(),
+            },
+          ],
+        }));
       };
 
       const handleEvent = (rawEvent) => {
@@ -327,23 +467,35 @@ export default function MobileChatbot() {
             const transcript = (payload.text || "").trim();
             if (!transcript) return;
             hasTranscript = true;
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: Date.now().toString(),
-                role: "user",
-                content: transcript,
-                time: formatTime(),
-                read: true,
-              },
-            ]);
+
+            updateActiveSession((sess) => {
+              const updatedTitle =
+                sess.title === "New Chat"
+                  ? transcript.slice(0, 24) + "..."
+                  : sess.title;
+              return {
+                title: updatedTitle,
+                messages: [
+                  ...sess.messages,
+                  {
+                    id: Date.now().toString(),
+                    role: "user",
+                    content: transcript,
+                    time: formatTime(),
+                    read: true,
+                  },
+                ],
+              };
+            });
             setVoiceStatus("Generating voice and text response...");
           } else if (payload.type === "token") {
             if (typeof payload.content === "string") {
               assistantReply += payload.content;
             }
           } else if (payload.type === "done") {
-            if (payload.thread_id) setThreadId(payload.thread_id);
+            if (payload.thread_id) {
+              updateActiveSession({ threadId: payload.thread_id });
+            }
             if (payload.response) {
               assistantReply = payload.response;
             }
@@ -356,7 +508,9 @@ export default function MobileChatbot() {
             }
             setVoiceStatus("Voice response played.");
           } else if (payload.type === "voice_done") {
-            if (payload.thread_id) setThreadId(payload.thread_id);
+            if (payload.thread_id) {
+              updateActiveSession({ threadId: payload.thread_id });
+            }
             if (payload.response) assistantReply = payload.response;
             ensureAssistantMessage();
             updateAssistantMessage(assistantReply || "Voice response received.");
@@ -383,24 +537,25 @@ export default function MobileChatbot() {
       if (buffer.trim()) handleEvent(buffer);
 
       if (!hasTranscript) {
-        // Voice fallback if Whisper API key not configured or offline demo
-        const fallbackText = "Voice response: Visiting hours are from 10:00 AM to 1:00 PM and 4:00 PM to 7:00 PM.";
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: "user",
-            content: "🎙️ Voice Question",
-            time: formatTime(),
-            read: true,
-          },
-          {
-            id: (Date.now() + 1).toString(),
-            role: "assistant",
-            content: fallbackText,
-            time: formatTime(),
-          },
-        ]);
+        const fallbackText = "Visiting hours are from 10:00 AM to 1:00 PM and 4:00 PM to 7:00 PM.";
+        updateActiveSession((sess) => ({
+          messages: [
+            ...sess.messages,
+            {
+              id: Date.now().toString(),
+              role: "user",
+              content: "🎙️ Voice Question",
+              time: formatTime(),
+              read: true,
+            },
+            {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: fallbackText,
+              time: formatTime(),
+            },
+          ],
+        }));
       }
     } catch (err) {
       setVoiceError(err.message || "Unable to process voice input.");
@@ -410,6 +565,7 @@ export default function MobileChatbot() {
   };
 
   const startVoiceRecording = async () => {
+    stopAllVoice();
     setVoiceError("");
     if (!navigator.mediaDevices?.getUserMedia) {
       setVoiceError("Microphone access is not supported by your browser.");
@@ -497,16 +653,18 @@ export default function MobileChatbot() {
     setError("");
 
     const currentTime = formatTime();
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        role: "user",
-        content: `Uploaded PDF: ${file.name}`,
-        time: currentTime,
-        read: true,
-      },
-    ]);
+    updateActiveSession((sess) => ({
+      messages: [
+        ...sess.messages,
+        {
+          id: Date.now().toString(),
+          role: "user",
+          content: `Uploaded PDF: ${file.name}`,
+          time: currentTime,
+          read: true,
+        },
+      ],
+    }));
 
     const formData = new FormData();
     formData.append("file", file);
@@ -525,30 +683,39 @@ export default function MobileChatbot() {
       }
 
       const payload = isJson ? data : {};
-      setStoredFilename(payload.stored_filename || "");
-      setThreadId(payload.thread_id || "");
-      setDocumentMeta({
+      const newMeta = {
         filename: payload.original_filename || file.name,
         pages: payload.pages || 1,
-      });
+      };
+
+      setSessions((prev) =>
+        prev.map((sess) => ({
+          ...sess,
+          storedFilename: payload.stored_filename || sess.storedFilename,
+          threadId: payload.thread_id || sess.threadId,
+          documentMeta: newMeta,
+        }))
+      );
 
       window.localStorage.setItem(
         "ozocoUploadedDocument",
         JSON.stringify(payload)
       );
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content:
-            payload.llm_response ||
-            payload.response ||
-            `I've processed "${file.name}". You can now ask me any specific questions about it!`,
-          time: formatTime(),
-        },
-      ]);
+      updateActiveSession((sess) => ({
+        messages: [
+          ...sess.messages,
+          {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content:
+              payload.llm_response ||
+              payload.response ||
+              `I've processed "${file.name}". You can now ask me any specific questions about it!`,
+            time: formatTime(),
+          },
+        ],
+      }));
     } catch (err) {
       setError(err.message || "Failed to upload PDF document.");
     } finally {
@@ -568,16 +735,23 @@ export default function MobileChatbot() {
     const userMsgId = Date.now().toString();
     const assistantMsgId = (Date.now() + 1).toString();
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: userMsgId,
-        role: "user",
-        content: trimmed,
-        time: currentTime,
-        read: true,
-      },
-    ]);
+    updateActiveSession((sess) => {
+      const updatedTitle =
+        sess.title === "New Chat" ? trimmed.slice(0, 24) + "..." : sess.title;
+      return {
+        title: updatedTitle,
+        messages: [
+          ...sess.messages,
+          {
+            id: userMsgId,
+            role: "user",
+            content: trimmed,
+            time: currentTime,
+            read: true,
+          },
+        ],
+      };
+    });
 
     try {
       const response = await fetch("/documents/chat/stream", {
@@ -609,22 +783,25 @@ export default function MobileChatbot() {
       const reader = response.body.getReader();
 
       setIsStreamingAnswer(true);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: assistantMsgId,
-          role: "assistant",
-          content: "...",
-          time: formatTime(),
-        },
-      ]);
+
+      updateActiveSession((sess) => ({
+        messages: [
+          ...sess.messages,
+          {
+            id: assistantMsgId,
+            role: "assistant",
+            content: "...",
+            time: formatTime(),
+          },
+        ],
+      }));
 
       const updateAssistantMessage = (content) => {
-        setMessages((prev) =>
-          prev.map((msg) =>
+        updateActiveSession((sess) => ({
+          messages: sess.messages.map((msg) =>
             msg.id === assistantMsgId ? { ...msg, content: content || "..." } : msg
-          )
-        );
+          ),
+        }));
       };
 
       const handleEvent = (rawEvent) => {
@@ -639,7 +816,9 @@ export default function MobileChatbot() {
             assistantReply += payload.content;
             updateAssistantMessage(assistantReply);
           } else if (payload.type === "done") {
-            if (payload.thread_id) setThreadId(payload.thread_id);
+            if (payload.thread_id) {
+              updateActiveSession({ threadId: payload.thread_id });
+            }
             if (!assistantReply && payload.response) {
               assistantReply = payload.response;
               updateAssistantMessage(assistantReply);
@@ -699,11 +878,7 @@ export default function MobileChatbot() {
         fallbackAnswers[trimmed] ||
         `Thank you for your question about "${trimmed}". How else can I assist you with your hospital visit today?`;
 
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantMsgId ? { ...msg, content: answer } : msg
-        )
-      );
+      updateAssistantMessage(answer);
     } finally {
       setIsStreamingAnswer(false);
       setIsSending(false);
@@ -717,14 +892,11 @@ export default function MobileChatbot() {
     }
   };
 
-  const clearChatHistory = () => {
-    setMessages(initialMessages);
-    window.localStorage.removeItem("ozocoMobileMessages");
-    setIsHistoryOpen(false);
-  };
-
   return (
-    <div className="m-app-viewport">
+    <div
+      className={`m-app-viewport ${theme === 'dark' ? 'dark' : ''}`}
+      onPointerDown={stopVoiceOutput}
+    >
       {/* Outer Mobile Frame Container */}
       <div className="m-phone-frame">
         {/* Top Status Bar */}
@@ -767,14 +939,26 @@ export default function MobileChatbot() {
             </div>
           </div>
 
-          <button
-            className="m-icon-btn m-history-btn"
-            type="button"
-            onClick={() => setIsHistoryOpen(true)}
-            aria-label="View history"
-          >
-            <History size={20} strokeWidth={2.2} />
-          </button>
+          <div className="m-header-right-actions">
+            <button
+              className="m-icon-btn"
+              type="button"
+              onClick={createNewChat}
+              title="Start New Chat"
+              aria-label="New chat"
+            >
+              <Plus size={20} strokeWidth={2.2} />
+            </button>
+            <button
+              className="m-icon-btn m-history-btn"
+              type="button"
+              onClick={() => setIsHistoryOpen(true)}
+              title="View Chat History"
+              aria-label="View history"
+            >
+              <History size={20} strokeWidth={2.2} />
+            </button>
+          </div>
         </header>
 
         {/* Internal Scrollable Main Chat Area */}
@@ -1053,6 +1237,58 @@ export default function MobileChatbot() {
               </div>
 
               <div className="m-drawer-body">
+                {/* "+ Start New Chat" Button */}
+                <button
+                  type="button"
+                  className="m-new-chat-btn"
+                  onClick={createNewChat}
+                >
+                  <Plus size={18} strokeWidth={2.4} />
+                  Start New Chat
+                </button>
+
+                {/* Saved Chat Conversations */}
+                <div className="m-drawer-section" style={{ marginTop: "16px" }}>
+                  <h3>Conversations ({sessions.length})</h3>
+                  <div className="m-sessions-list">
+                    {sessions.map((session) => {
+                      const isActive = session.id === activeSessionId;
+                      const msgCount = session.messages ? session.messages.length : 0;
+                      return (
+                        <div
+                          key={session.id}
+                          className={`m-session-item ${isActive ? "is-active" : ""}`}
+                          onClick={() => switchChat(session.id)}
+                        >
+                          <div className="m-session-left">
+                            <MessageSquare
+                              size={17}
+                              className={isActive ? "m-blue-text" : ""}
+                            />
+                            <div className="m-session-info">
+                              <span className="m-session-title">
+                                {session.title || "Chat Conversation"}
+                              </span>
+                              <span className="m-session-meta">
+                                {msgCount} {msgCount === 1 ? "message" : "messages"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="m-session-delete"
+                            onClick={(e) => deleteChat(session.id, e)}
+                            title="Delete conversation"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="m-drawer-section">
                   <h3>Hospital Services</h3>
                   <ul>
@@ -1089,7 +1325,7 @@ export default function MobileChatbot() {
                     onClick={clearChatHistory}
                   >
                     <Trash2 size={18} />
-                    Reset Conversation
+                    Clear Active Chat
                   </button>
                 </div>
               </div>
@@ -1102,7 +1338,7 @@ export default function MobileChatbot() {
           <div className="m-drawer-backdrop" onClick={() => setIsHistoryOpen(false)}>
             <div className="m-drawer-panel right" onClick={(e) => e.stopPropagation()}>
               <div className="m-drawer-header">
-                <h3>Chat History & Files</h3>
+                <h3>Chat Conversations</h3>
                 <button
                   type="button"
                   className="m-icon-btn"
@@ -1113,16 +1349,61 @@ export default function MobileChatbot() {
               </div>
 
               <div className="m-drawer-body">
-                <div className="m-history-card">
-                  <Clock3 size={20} />
-                  <div>
-                    <strong>Active Chat Session</strong>
-                    <span>{messages.length} messages in memory</span>
+                {/* "+ New Chat" Action Button */}
+                <button
+                  type="button"
+                  className="m-new-chat-btn"
+                  onClick={createNewChat}
+                >
+                  <Plus size={18} strokeWidth={2.4} />
+                  Start New Chat
+                </button>
+
+                {/* List of Saved Chat Conversations */}
+                <div className="m-drawer-section" style={{ marginTop: "16px" }}>
+                  <h3>Saved History ({sessions.length})</h3>
+                  <div className="m-sessions-list">
+                    {sessions.map((session) => {
+                      const isActive = session.id === activeSessionId;
+                      const msgCount = session.messages ? session.messages.length : 0;
+                      return (
+                        <div
+                          key={session.id}
+                          className={`m-session-item ${isActive ? "is-active" : ""}`}
+                          onClick={() => switchChat(session.id)}
+                        >
+                          <div className="m-session-left">
+                            <MessageSquare
+                              size={17}
+                              className={isActive ? "m-blue-text" : ""}
+                            />
+                            <div className="m-session-info">
+                              <span className="m-session-title">
+                                {session.title || "Chat Conversation"}
+                              </span>
+                              <span className="m-session-meta">
+                                {msgCount} {msgCount === 1 ? "message" : "messages"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="m-session-delete"
+                            onClick={(e) => deleteChat(session.id, e)}
+                            title="Delete conversation"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
+                {/* Uploaded PDF metadata info */}
                 {documentMeta && (
-                  <div className="m-history-card">
+                  <div className="m-history-card" style={{ marginTop: "16px" }}>
                     <FileText size={20} />
                     <div>
                       <strong>{documentMeta.filename}</strong>
@@ -1130,16 +1411,6 @@ export default function MobileChatbot() {
                     </div>
                   </div>
                 )}
-
-                <button
-                  type="button"
-                  className="m-clear-btn"
-                  onClick={clearChatHistory}
-                  style={{ marginTop: "24px" }}
-                >
-                  <RotateCcw size={18} />
-                  Clear History & Start Fresh
-                </button>
               </div>
             </div>
           </div>
