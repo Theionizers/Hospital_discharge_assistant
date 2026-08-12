@@ -97,6 +97,14 @@ export default function MobileChatbot() {
     return localStorage.getItem('ozocoTheme') || 'dark';
   });
 
+  const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+
+  const apiFetch = (path, options) => {
+    const base = API_BASE_URL ? API_BASE_URL.replace(/\/$/, "") : "";
+    const url = base ? `${base}${path}` : path;
+    return fetch(url, options);
+  };
+
   const activeSession =
     sessions.find((s) => s.id === activeSessionId) || sessions[0] || defaultSession;
 
@@ -407,7 +415,7 @@ export default function MobileChatbot() {
     const assistantMsgId = Date.now().toString();
 
     try {
-      const response = await fetch("/documents/voice/stream", {
+      const response = await apiFetch("/documents/voice/stream", {
         method: "POST",
         body: formData,
       });
@@ -670,7 +678,7 @@ export default function MobileChatbot() {
     formData.append("file", file);
 
     try {
-      const response = await fetch("/documents/upload", {
+      const response = await apiFetch("/documents/upload", {
         method: "POST",
         body: formData,
       });
@@ -754,7 +762,7 @@ export default function MobileChatbot() {
     });
 
     try {
-      const response = await fetch("/documents/chat/stream", {
+      const response = await apiFetch("/documents/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

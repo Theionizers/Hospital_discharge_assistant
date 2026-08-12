@@ -7,7 +7,13 @@ import {
 } from 'lucide-react';
 import MobileChatbot from "./MobileChatbot";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+
+const apiFetch = (path, options) => {
+  const base = API_BASE_URL ? API_BASE_URL.replace(/\/$/, "") : "";
+  const url = base ? `${base}${path}` : path;
+  return fetch(url, options);
+};
 
 const formatTime = () => {
   const now = new Date();
@@ -299,7 +305,7 @@ const Chatwindow = () => {
     });
 
     try {
-      const response = await fetch("/documents/chat/stream", {
+      const response = await apiFetch("/documents/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -441,7 +447,7 @@ const Chatwindow = () => {
     formData.append("file", file);
 
     try {
-      const response = await fetch("/documents/upload", {
+      const response = await apiFetch("/documents/upload", {
         method: "POST",
         body: formData,
       });
