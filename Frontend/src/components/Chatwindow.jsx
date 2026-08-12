@@ -613,8 +613,7 @@ const Chatwindow = () => {
     const assistantMsgId = Date.now().toString();
 
     try {
-      const response = await fetch("/documents/voice/stream", {
-        method: "POST",
+      const response = await apiFetch("/documents/voice/stream", {
         body: formData,
       });
 

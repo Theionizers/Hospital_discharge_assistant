@@ -2614,25 +2614,19 @@ input:focus-visible {
 .m-app-viewport.dark .m-drawer-header,
 .m-app-viewport.dark .m-drawer-body,
 .m-app-viewport.dark .m-drawer-section,
-.m-app-viewport.dark .m-drawer-footer {
-  color: var(--m-text-dark);
-}
+  .m-app-viewport.dark .m-drawer-footer,
+  .m-app-viewport.dark .m-msg-bubble p,
+  .m-app-viewport.dark .m-recording-meter,
+  .m-app-viewport.dark .m-voice-status-pill,
+  .m-app-viewport.dark .m-upload-info span,
+  .m-app-viewport.dark .m-upload-info strong,
+  .m-app-viewport.dark .m-faq-left,
+  .m-app-viewport.dark .m-faq-arrow {
+    color: white;
+  }
 
-.m-app-viewport.dark .m-icon-btn,
-.m-app-viewport.dark .m-plus-btn,
-.m-app-viewport.dark .m-send-btn {
-  background: rgba(255,255,255,0.06);
-  color: var(--m-text-dark);
-}
-
-.m-app-viewport.dark .m-icon-btn:hover {
-  background: rgba(255,255,255,0.12);
-}
-
-.m-app-viewport.dark .m-header {
-  background: #111827;
-  border-color: #475569;
-}
+  .m-app-viewport.dark .m-text-input::placeholder {
+    color: rgba(255,255,255,0.6);
 
 .m-app-viewport.dark .m-faq-pill:hover {
   background: #18202d;
