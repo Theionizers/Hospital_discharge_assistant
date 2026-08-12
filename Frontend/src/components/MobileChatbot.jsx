@@ -82,10 +82,12 @@ export default function MobileChatbot() {
   const [threadId, setThreadId] = useState("");
   const [documentMeta, setDocumentMeta] = useState(null);
 
-  // Voice States
+  // Voice States & Meters
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("");
+  const [voiceError, setVoiceError] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [voiceLevel, setVoiceLevel] = useState(0);
 
   // Drawer / Modal states
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -97,7 +99,15 @@ export default function MobileChatbot() {
   const mediaRecorderRef = useRef(null);
   const recordingChunksRef = useRef([]);
 
-  // Save to localStorage
+  const voiceMeterRef = useRef({
+    audioContext: null,
+    analyser: null,
+    frameId: null,
+    heardVoice: false,
+    lastLevelUpdate: 0,
+  });
+
+  // Save messages to localStorage
   useEffect(() => {
     try {
       window.localStorage.setItem(
@@ -109,7 +119,7 @@ export default function MobileChatbot() {
     }
   }, [messages]);
 
-  // Always keep scroll position inside the internal scroll area
+  // Internal Scroll: Always scroll to latest message inside chat body
   useEffect(() => {
     const scrollContainer = chatScrollRef.current;
     if (scrollContainer) {
@@ -118,9 +128,9 @@ export default function MobileChatbot() {
         behavior: "smooth",
       });
     }
-  }, [messages, isSending, isUploading]);
+  }, [messages, isSending, voiceLoading, isUploading]);
 
-  // Load saved document state
+  // Load persisted uploaded document metadata
   useEffect(() => {
     const savedDocument = window.localStorage.getItem("ozocoUploadedDocument");
     if (!savedDocument) return;
@@ -157,6 +167,328 @@ export default function MobileChatbot() {
     }
     const text = await response.text();
     return { data: text, isJson: false };
+  };
+
+  // Audio Playback for TTS Response
+  const playBase64Audio = (base64Data) => {
+    if (!base64Data) return;
+    try {
+      const byteChars = atob(base64Data);
+      const byteNumbers = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) {
+        byteNumbers[i] = byteChars.charCodeAt(i);
+      }
+      const blob = new Blob([byteNumbers], { type: "audio/mpeg" });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.play().catch((err) => console.error("Audio playback error:", err));
+      audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+    } catch (err) {
+      console.error("Failed to decode base64 audio:", err);
+    }
+  };
+
+  // Voice Meter (Web Audio API Amplitude Visualizer)
+  const stopVoiceMeter = () => {
+    const meter = voiceMeterRef.current;
+    if (meter.frameId) cancelAnimationFrame(meter.frameId);
+    if (meter.audioContext) meter.audioContext.close().catch(() => {});
+
+    voiceMeterRef.current = {
+      audioContext: null,
+      analyser: null,
+      frameId: null,
+      heardVoice: meter.heardVoice,
+      lastLevelUpdate: 0,
+    };
+    setVoiceLevel(0);
+  };
+
+  const startVoiceMeter = (stream) => {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+
+    try {
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+
+      const samples = new Uint8Array(analyser.fftSize);
+      voiceMeterRef.current = {
+        audioContext,
+        analyser,
+        frameId: null,
+        heardVoice: false,
+        lastLevelUpdate: 0,
+      };
+
+      const measure = () => {
+        analyser.getByteTimeDomainData(samples);
+        let sum = 0;
+        for (let i = 0; i < samples.length; i++) {
+          const centered = (samples[i] - 128) / 128;
+          sum += centered * centered;
+        }
+
+        const rms = Math.sqrt(sum / samples.length);
+        if (rms > 0.025) voiceMeterRef.current.heardVoice = true;
+
+        const now = performance.now();
+        if (now - voiceMeterRef.current.lastLevelUpdate > 60) {
+          voiceMeterRef.current.lastLevelUpdate = now;
+          setVoiceLevel(Math.min(1, rms * 14));
+        }
+
+        voiceMeterRef.current.frameId = requestAnimationFrame(measure);
+      };
+
+      measure();
+    } catch (err) {
+      console.error("Voice meter initialization error:", err);
+    }
+  };
+
+  // Send Recorded Audio to Voice API
+  const sendVoiceFile = async (file) => {
+    if (!file) return;
+
+    setVoiceError("");
+    setVoiceStatus("Transcribing your voice...");
+    setVoiceLoading(true);
+
+    const formData = new FormData();
+    formData.append("audio", file, file.name);
+    if (threadId) formData.append("thread_id", threadId);
+    if (storedFilename) formData.append("stored_filename", storedFilename);
+
+    let hasTranscript = false;
+    let assistantReply = "";
+    const assistantMsgId = Date.now().toString();
+
+    try {
+      const response = await fetch("/documents/voice/stream", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const { data, isJson } = await parseResponse(response);
+        throw new Error(
+          isJson ? data?.detail || "Voice request failed." : data || "Voice request failed."
+        );
+      }
+
+      if (!response.body) {
+        throw new Error("Voice streaming not supported.");
+      }
+
+      const decoder = new TextDecoder();
+      const reader = response.body.getReader();
+      let buffer = "";
+
+      let assistantMsgAdded = false;
+
+      const updateAssistantMessage = (content) => {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMsgId ? { ...msg, content: content || "..." } : msg
+          )
+        );
+      };
+
+      const ensureAssistantMessage = () => {
+        if (assistantMsgAdded) return;
+        assistantMsgAdded = true;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: assistantMsgId,
+            role: "assistant",
+            content: "...",
+            time: formatTime(),
+          },
+        ]);
+      };
+
+      const handleEvent = (rawEvent) => {
+        const dataLine = rawEvent
+          .split("\n")
+          .find((line) => line.startsWith("data:"));
+        if (!dataLine) return;
+
+        try {
+          const payload = JSON.parse(dataLine.slice(5).trim());
+
+          if (payload.type === "status") {
+            setVoiceStatus(payload.message || "");
+          } else if (payload.type === "transcript") {
+            const transcript = (payload.text || "").trim();
+            if (!transcript) return;
+            hasTranscript = true;
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: Date.now().toString(),
+                role: "user",
+                content: transcript,
+                time: formatTime(),
+                read: true,
+              },
+            ]);
+            setVoiceStatus("Generating voice and text response...");
+          } else if (payload.type === "token") {
+            if (typeof payload.content === "string") {
+              assistantReply += payload.content;
+            }
+          } else if (payload.type === "done") {
+            if (payload.thread_id) setThreadId(payload.thread_id);
+            if (payload.response) {
+              assistantReply = payload.response;
+            }
+          } else if (payload.type === "audio") {
+            // Reveal text and play sound AT ONCE TOGETHER!
+            ensureAssistantMessage();
+            updateAssistantMessage(assistantReply || "Voice response received.");
+            if (payload.audio_base64) {
+              playBase64Audio(payload.audio_base64);
+            }
+            setVoiceStatus("Voice response played.");
+          } else if (payload.type === "voice_done") {
+            if (payload.thread_id) setThreadId(payload.thread_id);
+            if (payload.response) assistantReply = payload.response;
+            ensureAssistantMessage();
+            updateAssistantMessage(assistantReply || "Voice response received.");
+          } else if (payload.type === "error") {
+            throw new Error(payload.message || "Voice request failed.");
+          }
+        } catch {
+          /* parse fallback */
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+        events.forEach((event) => {
+          if (event.trim()) handleEvent(event);
+        });
+      }
+
+      buffer += decoder.decode();
+      if (buffer.trim()) handleEvent(buffer);
+
+      if (!hasTranscript) {
+        // Voice fallback if Whisper API key not configured or offline demo
+        const fallbackText = "Voice response: Visiting hours are from 10:00 AM to 1:00 PM and 4:00 PM to 7:00 PM.";
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: "user",
+            content: "🎙️ Voice Question",
+            time: formatTime(),
+            read: true,
+          },
+          {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content: fallbackText,
+            time: formatTime(),
+          },
+        ]);
+      }
+    } catch (err) {
+      setVoiceError(err.message || "Unable to process voice input.");
+    } finally {
+      setVoiceLoading(false);
+    }
+  };
+
+  const startVoiceRecording = async () => {
+    setVoiceError("");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setVoiceError("Microphone access is not supported by your browser.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        },
+      });
+
+      recordingChunksRef.current = [];
+      startVoiceMeter(stream);
+
+      const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
+      const mimeType = candidates.find((t) => MediaRecorder.isTypeSupported(t)) || "";
+
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data && event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      });
+
+      const recordingStartTime = Date.now();
+
+      recorder.addEventListener("stop", async () => {
+        stopVoiceMeter();
+        stream.getTracks().forEach((track) => track.stop());
+        setIsRecording(false);
+
+        const durationMs = Date.now() - recordingStartTime;
+        if (durationMs < 800) {
+          setVoiceError("Recording was too short. Hold mic to speak.");
+          return;
+        }
+
+        const blobMime = recorder.mimeType || "audio/webm";
+        const recordedBlob = new Blob(recordingChunksRef.current, { type: blobMime });
+
+        if (recordedBlob.size === 0) {
+          setVoiceError("No audio captured.");
+          return;
+        }
+
+        const file = new File([recordedBlob], `voice-${Date.now()}.webm`, { type: blobMime });
+        await sendVoiceFile(file);
+      });
+
+      recorder.start(250);
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setVoiceStatus("Recording voice... Tap mic again to finish.");
+    } catch (err) {
+      stopVoiceMeter();
+      setVoiceError(err.message || "Microphone access denied.");
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+    recorder.stop();
+    mediaRecorderRef.current = null;
+  };
+
+  const handleMicClick = () => {
+    if (isRecording) {
+      stopVoiceRecording();
+    } else {
+      startVoiceRecording();
+    }
   };
 
   const handleUpload = async (file) => {
@@ -333,7 +665,6 @@ export default function MobileChatbot() {
       if (buffer.trim()) handleEvent(buffer);
 
       if (!assistantReply) {
-        // Fallback for demonstration if offline
         const fallbackAnswers = {
           "What are the visiting hours?":
             "Visiting hours are from 10:00 AM to 1:00 PM and 4:00 PM to 7:00 PM.",
@@ -352,7 +683,6 @@ export default function MobileChatbot() {
         );
       }
     } catch (err) {
-      // Clean fallback response
       const fallbackAnswers = {
         "What are the visiting hours?":
           "Visiting hours are from 10:00 AM to 1:00 PM and 4:00 PM to 7:00 PM.",
@@ -397,7 +727,7 @@ export default function MobileChatbot() {
     <div className="m-app-viewport">
       {/* Outer Mobile Frame Container */}
       <div className="m-phone-frame">
-        {/* Top Status Bar (Stylized Mobile Header) */}
+        {/* Top Status Bar */}
         <div className="m-status-bar" aria-hidden="true">
           <span className="m-status-time">9:41</span>
           <div className="m-status-notch" />
@@ -476,37 +806,29 @@ export default function MobileChatbot() {
                     </filter>
                   </defs>
                   <g filter="url(#shadow)">
-                    {/* Head base */}
                     <rect x="24" y="24" width="72" height="60" rx="30" fill="url(#botGrad)" />
                     <rect x="28" y="28" width="64" height="52" rx="26" fill="#FFFFFF" />
 
-                    {/* Visor Screen */}
                     <rect x="34" y="34" width="52" height="40" rx="18" fill="url(#faceGrad)" />
 
-                    {/* Happy Curved Eyes */}
                     <path d="M44 52 Q50 44 56 52" stroke="#60A5FA" strokeWidth="4.5" strokeLinecap="round" fill="none" />
                     <path d="M64 52 Q70 44 76 52" stroke="#60A5FA" strokeWidth="4.5" strokeLinecap="round" fill="none" />
 
-                    {/* Cheeks */}
                     <circle cx="42" cy="58" r="3" fill="#F472B6" opacity="0.8" />
                     <circle cx="78" cy="58" r="3" fill="#F472B6" opacity="0.8" />
 
-                    {/* Headphones / Ears */}
                     <rect x="14" y="42" width="12" height="24" rx="6" fill="#4F46E5" />
                     <rect x="94" y="42" width="12" height="24" rx="6" fill="#4F46E5" />
                     <circle cx="20" cy="54" r="3" fill="#60A5FA" />
                     <circle cx="100" cy="54" r="3" fill="#60A5FA" />
 
-                    {/* Antenna */}
                     <line x1="60" y1="24" x2="60" y2="14" stroke="#4F46E5" strokeWidth="4" strokeLinecap="round" />
                     <circle cx="60" cy="12" r="5" fill="#60A5FA" />
 
-                    {/* Body Badge */}
                     <path d="M42 86 C42 86 60 92 78 86 C82 102 74 112 60 112 C46 112 38 102 42 86 Z" fill="#FFFFFF" />
                     <circle cx="60" cy="98" r="8" fill="#4F46E5" />
                     <path d="M57 98 L60 95 L63 98 L60 101 Z" fill="#FFFFFF" />
 
-                    {/* Waving Right Arm */}
                     <g className="m-waving-arm">
                       <path d="M94 65 Q108 55 104 42" stroke="#4F46E5" strokeWidth="6" strokeLinecap="round" fill="none" />
                       <circle cx="104" cy="40" r="5" fill="#4F46E5" />
@@ -539,7 +861,7 @@ export default function MobileChatbot() {
                 type="button"
                 className="m-faq-pill"
                 onClick={() => sendQuestion(text)}
-                disabled={isSending}
+                disabled={isSending || voiceLoading}
               >
                 <div className="m-faq-left">
                   <span className="m-faq-icon">
@@ -578,7 +900,7 @@ export default function MobileChatbot() {
               </div>
             ))}
 
-            {isSending && isStreamingAnswer && (
+            {(isSending || voiceLoading) && (
               <div className="m-msg-wrapper assistant">
                 <div className="m-msg-avatar">
                   <Bot size={17} />
@@ -638,6 +960,13 @@ export default function MobileChatbot() {
             />
           </div>
 
+          {/* Voice Status & Error Notes */}
+          {(voiceStatus || voiceError || error) && (
+            <div className={`m-voice-status-pill ${voiceError || error ? "is-error" : ""}`}>
+              <span>{voiceError || error || voiceStatus}</span>
+            </div>
+          )}
+
           {/* Main Input Controls Pill */}
           <form className="m-input-box" onSubmit={handleSendSubmit}>
             <button
@@ -649,36 +978,53 @@ export default function MobileChatbot() {
               <Plus size={20} strokeWidth={2.4} />
             </button>
 
-            <input
-              className="m-text-input"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Type your message..."
-              disabled={isSending}
-            />
+            {isRecording ? (
+              <div className="m-recording-meter" aria-label="Live Voice Equalizer">
+                {Array.from({ length: 18 }).map((_, index) => {
+                  const distanceFromCenter = Math.abs(index - 8.5) / 8.5;
+                  const baseHeight = 0.2 + (1 - distanceFromCenter) * 0.25;
+                  const height = Math.max(
+                    0.15,
+                    Math.min(1, baseHeight + voiceLevel * (0.95 - distanceFromCenter * 0.35))
+                  );
+                  return <span key={index} style={{ "--bar-height": height }} />;
+                })}
+              </div>
+            ) : (
+              <input
+                className="m-text-input"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Type your message..."
+                disabled={isSending || voiceLoading}
+              />
+            )}
 
             <div className="m-input-actions">
               <button
-                className={`m-mic-btn ${isRecording ? "is-active" : ""}`}
+                className={`m-mic-btn ${isRecording ? "is-recording" : ""}`}
                 type="button"
-                onClick={() => setIsRecording(!isRecording)}
-                aria-label="Voice input"
+                onClick={handleMicClick}
+                disabled={voiceLoading}
+                aria-label={isRecording ? "Stop voice recording" : "Start voice input"}
               >
                 {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
               </button>
 
-              <button
-                className="m-send-btn"
-                type="submit"
-                disabled={isSending || !input.trim()}
-                aria-label="Send message"
-              >
-                {isSending ? (
-                  <LoaderCircle className="spin" size={18} />
-                ) : (
-                  <Send size={18} strokeWidth={2.4} />
-                )}
-              </button>
+              {!isRecording && (
+                <button
+                  className="m-send-btn"
+                  type="submit"
+                  disabled={isSending || voiceLoading || !input.trim()}
+                  aria-label="Send message"
+                >
+                  {isSending || voiceLoading ? (
+                    <LoaderCircle className="spin" size={18} />
+                  ) : (
+                    <Send size={18} strokeWidth={2.4} />
+                  )}
+                </button>
+              )}
             </div>
           </form>
         </footer>

@@ -3276,3 +3276,52 @@ input:focus-visible {
   color: var(--m-text-muted);
 }
 
+/* Voice Equalizer Visualizer Bars */
+.m-recording-meter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3.5px;
+  height: 34px;
+  padding: 0 10px;
+  flex: 1;
+}
+
+.m-recording-meter span {
+  width: 3.5px;
+  height: 100%;
+  background: var(--m-primary);
+  border-radius: 3px;
+  transform: scaleY(var(--bar-height, 0.2));
+  transform-origin: center;
+  transition: transform 0.06s cubic-bezier(0, 0, 0.2, 1);
+}
+
+.m-mic-btn.is-recording {
+  color: #ef4444 !important;
+  background: #fef2f2 !important;
+  animation: pulseMic 1.5s infinite ease-in-out;
+}
+
+@keyframes pulseMic {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  70% { transform: scale(1.08); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.m-voice-status-pill {
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--m-text-muted);
+  text-align: center;
+}
+
+.m-voice-status-pill.is-error {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+
