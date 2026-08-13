@@ -9,9 +9,10 @@ import MobileChatbot from "./MobileChatbot";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
-const apiFetch = (path, options) => {
+const apiFetch = (path, options = {}) => {
   const base = API_BASE_URL ? API_BASE_URL.replace(/\/$/, "") : "";
   const url = base ? `${base}${path}` : path;
+  console.log("apiFetch", { url, options });
   return fetch(url, options);
 };
 
@@ -45,7 +46,7 @@ const defaultSession = {
   storedFilename: null,
   documentMeta: null,
   messages: [
-    { id: 1, role: 'bot', content: "Hello! I'm Ozoco ChatBuddy, your virtual assistant. How can I help you today?", time: formatTime() }
+    { id: 1, role: 'assistant', content: "Hello! I'm Ozoco ChatBuddy, your virtual assistant. How can I help you today?", time: formatTime() }
   ]
 };
 
@@ -78,6 +79,7 @@ const Chatwindow = () => {
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
+  
   
   const [activeMenuId, setActiveMenuId] = useState(null);
 
@@ -142,6 +144,8 @@ const Chatwindow = () => {
   }, [theme]);
 
   const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0];
+  const activeSessionRef = useRef(activeSession);
+  useEffect(() => { activeSessionRef.current = activeSession; }, [activeSession]);
 
   const updateActiveSession = (updater) => {
     setSessions((prev) =>
@@ -246,7 +250,7 @@ const Chatwindow = () => {
       for (let i = 0; i < len; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
-      const blob = new Blob([bytes], { type: 'audio/mp3' });
+      const blob = new Blob([bytes], { type: 'audio/mpeg' });
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       activeAudioRef.current = audio;
@@ -310,8 +314,8 @@ const Chatwindow = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: trimmed,
-          thread_id: activeSession?.threadId || undefined,
-          stored_filename: activeSession?.storedFilename || undefined,
+          thread_id: activeSessionRef.current?.threadId || undefined,
+          stored_filename: activeSessionRef.current?.storedFilename || undefined,
         }),
       });
 
@@ -338,7 +342,7 @@ const Chatwindow = () => {
           ...sess.messages,
           {
             id: assistantMsgId,
-            role: "bot",
+            role: "assistant",
             content: "...",
             time: formatTime(),
           },
@@ -473,7 +477,7 @@ const Chatwindow = () => {
           ...sess.messages,
           {
             id: (Date.now() + 1).toString(),
-            role: "bot",
+            role: "assistant",
             content:
               payload.llm_response ||
               payload.response ||
@@ -502,6 +506,7 @@ const Chatwindow = () => {
     }
 
     try {
+      console.log("Desktop voice startRecording: requesting microphone");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -510,6 +515,7 @@ const Chatwindow = () => {
         },
       });
 
+      console.log("Desktop voice startRecording: microphone granted", stream);
       audioChunksRef.current = [];
       
       // Voice meter
@@ -542,6 +548,10 @@ const Chatwindow = () => {
         : new MediaRecorder(stream);
 
       recorder.addEventListener("dataavailable", (event) => {
+        console.log("Desktop voice dataavailable", {
+          type: event.data?.type,
+          size: event.data?.size,
+        });
         if (event.data && event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
@@ -550,6 +560,7 @@ const Chatwindow = () => {
       const recordingStartTime = Date.now();
 
       recorder.addEventListener("stop", async () => {
+        console.log("Desktop voice recorder stopped", { duration: Date.now() - recordingStartTime });
         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         if (audioContextRef.current) {
           audioContextRef.current.close();
@@ -592,33 +603,57 @@ const Chatwindow = () => {
 
   const stopRecording = () => {
     const recorder = mediaRecorderRef.current;
+    console.log("Desktop voice stopRecording", { recorderState: recorder?.state });
     if (!recorder || recorder.state === "inactive") return;
     recorder.stop();
     mediaRecorderRef.current = null;
   };
 
+
   const sendVoiceFile = async (file) => {
     if (!file) return;
+
+    console.log("Desktop voice sendVoiceFile called", {
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+      activeSessionId: activeSessionRef.current?.id,
+      activeSessionThreadId: activeSessionRef.current?.threadId,
+      activeSessionStoredFilename: activeSessionRef.current?.storedFilename,
+    });
 
     setStatusMessage("Transcribing your voice...");
     setIsTyping(true);
 
     const formData = new FormData();
     formData.append("audio", file, file.name);
-    if (activeSession?.threadId) formData.append("thread_id", activeSession.threadId);
-    if (activeSession?.storedFilename) formData.append("stored_filename", activeSession.storedFilename);
+    if (activeSessionRef.current?.threadId) formData.append("thread_id", activeSessionRef.current.threadId);
+    if (activeSessionRef.current?.storedFilename) formData.append("stored_filename", activeSessionRef.current.storedFilename);
 
     let hasTranscript = false;
     let assistantReply = "";
     const assistantMsgId = Date.now().toString();
 
     try {
+      console.log("Desktop voice sending request", {
+        url: API_BASE_URL ? API_BASE_URL.replace(/\/$/, "") + "/documents/voice/stream" : "/documents/voice/stream",
+        method: "POST",
+      });
       const response = await apiFetch("/documents/voice/stream", {
+        method: "POST",
         body: formData,
+      });
+
+      console.log("Desktop voice response received", {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        url: response.url,
       });
 
       if (!response.ok) {
         const { data, isJson } = await parseResponse(response);
+        console.error("Desktop voice response error body", { data, isJson });
         throw new Error(
           isJson ? data?.detail || "Voice request failed." : data || "Voice request failed."
         );
@@ -649,7 +684,7 @@ const Chatwindow = () => {
             ...sess.messages,
             {
               id: assistantMsgId,
-              role: "bot",
+              role: "assistant",
               content: "...",
               time: formatTime(),
             },
@@ -658,6 +693,7 @@ const Chatwindow = () => {
       };
 
       const handleEvent = (rawEvent) => {
+        console.log("Desktop voice raw event chunk", rawEvent);
         const dataLine = rawEvent
           .split("\n")
           .find((line) => line.startsWith("data:"));
@@ -665,6 +701,7 @@ const Chatwindow = () => {
 
         try {
           const payload = JSON.parse(dataLine.slice(5).trim());
+          console.log("Desktop voice stream payload", payload);
 
           if (payload.type === "status") {
             setStatusMessage(payload.message || "");
@@ -721,8 +758,8 @@ const Chatwindow = () => {
           } else if (payload.type === "error") {
             throw new Error(payload.message || "Voice request failed.");
           }
-        } catch {
-          /* parse fallback */
+        } catch (e) {
+          console.error("Desktop voice handleEvent error:", e);
         }
       };
 
@@ -754,7 +791,7 @@ const Chatwindow = () => {
             },
             {
               id: (Date.now() + 1).toString(),
-              role: "bot",
+              role: "assistant",
               content: fallbackText,
               time: formatTime(),
             },
@@ -782,7 +819,7 @@ const Chatwindow = () => {
   };
 
   if (isMobile) {
-    return <MobileChatbot />;
+    return <MobileChatbot sessions={sessions} setSessions={setSessions} activeSessionId={activeSessionId} setActiveSessionId={setActiveSessionId} theme={theme} setTheme={setTheme} />;
   }
 
   const suggestedPrompts = [
@@ -925,6 +962,21 @@ const Chatwindow = () => {
         .pc-meter-bar { width: 4px; background-color: var(--pc-primary); border-radius: 2px; transition: height 0.1s ease; }
         
         .pc-status-msg { text-align: center; font-size: 0.75rem; color: var(--pc-text-muted); margin-top: 0.5rem; height: 16px; }
+
+        /* Transcript Dialog Styles */
+        .pc-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .pc-modal { background-color: var(--pc-sidebar-bg); border-radius: 1rem; padding: 2rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); max-width: 500px; width: 90%; }
+        .pc-modal h2 { margin: 0 0 1rem 0; font-size: 1.5rem; }
+        .pc-modal p { color: var(--pc-text-muted); margin: 0 0 1.5rem 0; }
+        .pc-transcript-box { background-color: var(--pc-bg); border: 1px solid var(--pc-border); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1.5rem; line-height: 1.6; word-wrap: break-word; min-height: 80px; max-height: 300px; overflow-y: auto; }
+        .pc-transcript-box::-webkit-scrollbar { width: 4px; }
+        .pc-transcript-box::-webkit-scrollbar-thumb { background: var(--pc-border); border-radius: 4px; }
+        .pc-modal-actions { display: flex; gap: 1rem; justify-content: flex-end; }
+        .pc-modal-btn { padding: 0.75rem 1.5rem; border-radius: 0.5rem; border: none; cursor: pointer; font-weight: 500; transition: background-color 0.2s; font-size: 0.9375rem; }
+        .pc-modal-btn-cancel { background-color: var(--pc-border); color: var(--pc-text); }
+        .pc-modal-btn-cancel:hover { background-color: var(--pc-hover); }
+        .pc-modal-btn-send { background-color: var(--pc-primary); color: white; }
+        .pc-modal-btn-send:hover { background-color: var(--pc-primary-hover); }
       `}} />
 
       {/* SIDEBAR */}
@@ -1154,6 +1206,8 @@ const Chatwindow = () => {
           <div className="pc-status-msg">{statusMessage}</div>
         </div>
       </div>
+
+
     </div>
   );
 };

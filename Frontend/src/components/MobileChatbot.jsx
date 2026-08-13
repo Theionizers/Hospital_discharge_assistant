@@ -72,9 +72,11 @@ const defaultSession = {
   messages: initialMessages,
 };
 
-export default function MobileChatbot() {
-  // Multiple Chat Conversations State
-  const [sessions, setSessions] = useState(() => {
+export default function MobileChatbot(props) {
+  // Multiple Chat Conversations State — use parent props if provided (controlled mode)
+  const isControlled = props.sessions !== undefined;
+
+  const [ownSessions, setOwnSessions] = useState(() => {
     try {
       const saved = localStorage.getItem("ozocoChatSessions");
       if (saved) {
@@ -85,7 +87,7 @@ export default function MobileChatbot() {
     return [defaultSession];
   });
 
-  const [activeSessionId, setActiveSessionId] = useState(() => {
+  const [ownActiveSessionId, setOwnActiveSessionId] = useState(() => {
     try {
       const savedId = localStorage.getItem("ozocoActiveSessionId");
       if (savedId) return savedId;
@@ -93,9 +95,16 @@ export default function MobileChatbot() {
     return "session-default";
   });
 
-  const [theme, setTheme] = useState(() => {
+  const [ownTheme, setOwnTheme] = useState(() => {
     return localStorage.getItem('ozocoTheme') || 'dark';
   });
+
+  const sessions = isControlled ? props.sessions : ownSessions;
+  const setSessions = isControlled ? props.setSessions : setOwnSessions;
+  const activeSessionId = isControlled ? props.activeSessionId : ownActiveSessionId;
+  const setActiveSessionId = isControlled ? props.setActiveSessionId : setOwnActiveSessionId;
+  const theme = isControlled ? props.theme : ownTheme;
+  const setTheme = isControlled ? props.setTheme : setOwnTheme;
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
@@ -107,6 +116,8 @@ export default function MobileChatbot() {
 
   const activeSession =
     sessions.find((s) => s.id === activeSessionId) || sessions[0] || defaultSession;
+  const activeSessionRef = useRef(activeSession);
+  useEffect(() => { activeSessionRef.current = activeSession; }, [activeSession]);
 
   const messages = activeSession.messages || initialMessages;
   const threadId = activeSession.threadId || "";
@@ -407,8 +418,8 @@ export default function MobileChatbot() {
 
     const formData = new FormData();
     formData.append("audio", file, file.name);
-    if (threadId) formData.append("thread_id", threadId);
-    if (storedFilename) formData.append("stored_filename", storedFilename);
+    if (activeSessionRef.current?.threadId) formData.append("thread_id", activeSessionRef.current.threadId);
+    if (activeSessionRef.current?.storedFilename) formData.append("stored_filename", activeSessionRef.current.storedFilename);
 
     let hasTranscript = false;
     let assistantReply = "";
@@ -767,8 +778,8 @@ export default function MobileChatbot() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: trimmed,
-          thread_id: threadId || undefined,
-          stored_filename: storedFilename || undefined,
+          thread_id: activeSessionRef.current?.threadId || undefined,
+          stored_filename: activeSessionRef.current?.storedFilename || undefined,
         }),
       });
 

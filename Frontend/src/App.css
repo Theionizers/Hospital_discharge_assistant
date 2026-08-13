@@ -2627,8 +2627,9 @@ input:focus-visible {
 
   .m-app-viewport.dark .m-text-input::placeholder {
     color: rgba(255,255,255,0.6);
+  }
 
-.m-app-viewport.dark .m-faq-pill:hover {
+  .m-app-viewport.dark .m-faq-pill:hover {
   background: #18202d;
   border-color: #475569;
 }

@@ -137,5 +137,38 @@ async def voice_chat_stream(
     )
 
 
+@router.post("/voice/transcribe-only")
+async def voice_transcribe_only(
+    audio: UploadFile = File(...),
+):
+    """Transcribe voice to text without sending to AI"""
+    try:
+        audio_bytes = await audio.read()
+
+        if not audio_bytes:
+            raise HTTPException(status_code=400, detail="Audio file is empty")
+
+        filename = audio.filename
+        print(f"Voice transcribe-only | file={filename}  type={audio.content_type}  size={len(audio_bytes)}")
+
+        user_text = await speech_to_text(audio_bytes, filename)
+        print(f"Voice transcribe-only | user said: {user_text}")
+
+        if not user_text:
+            raise HTTPException(status_code=400, detail="No voice detected. Please speak louder or hold the microphone closer and try again.")
+
+        return {
+            "text": user_text,
+            "success": True,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        print(f"Voice transcribe-only error: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event)}\n\n"
